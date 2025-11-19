@@ -163,18 +163,6 @@ Example: Full House K♣K♦K♥A♠A♣
 | Four of a Kind | 60 | 7 |
 | Straight Flush | 100 | 8 |
 
-### Action Space
-
-| Code | Action | Description |
-|------|--------|-------------|
-| 0 | PLAY_BEST | Play best scoring 5-card hand |
-| 1 | PLAY_PAIR | Play highest pair |
-| 2 | DISCARD_NON_PAIRED | Discard all non-paired cards |
-| 3 | DISCARD_LOWEST_3 | Discard 3 lowest-ranked cards |
-| 4 | PLAY_HIGHEST_3 | Play 3 highest cards as High Card |
-| 5 | RANDOM_PLAY | Random valid play (1-5 cards) |
-| 6 | RANDOM_DISCARD | Random valid discard (1-8 cards) |
-
 ### Observation Space (8-dimensional)
 
 1. `plays_left` (0-4)
@@ -242,13 +230,6 @@ python python/examples/random_agent.py
 # Output: ~47% win rate on target_score=300
 ```
 
-## Documentation
-
-- **INTERFACE_CONTRACT.md** - Complete API specification
-- **PROJECT_ARCHITECTURE_AND_RULESET.md** - Architecture and v0 ruleset
-- **BALATRO_BASIC_RULES.md** - Full Balatro game rules (superset of v0)
-- **CLAUDE.md** - Development guidance for Claude Code
-
 ## Limitations (v0)
 
 The following Balatro features are **not** implemented in v0:
@@ -260,11 +241,3 @@ The following Balatro features are **not** implemented in v0:
 - Consumables (Tarot/Planet/Spectral cards)
 
 These may be added in future versions after RL research phase.
-
-## License
-
-Educational project for AI/ML coursework.
-
-## Version
-
-v0.1.0 - Initial single-blind simulator release
