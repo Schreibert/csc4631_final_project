@@ -5,6 +5,9 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Generate compile_commands.json for IDE integration
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 # Build options
 option(BUILD_TESTS "Build test suite" ON)
 option(BUILD_PYTHON_BINDINGS "Build Python bindings" ON)

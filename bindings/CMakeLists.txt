@@ -14,7 +14,8 @@ FetchContent_MakeAvailable(pybind11)
 # Create Python module
 pybind11_add_module(_balatro_core pybind/bindings.cpp)
 
-target_link_libraries(_balatro_core PRIVATE balatro_core)
+# Ensure the pybind11 targets (and their include dirs) are linked to the extension
+target_link_libraries(_balatro_core PRIVATE pybind11::module balatro_core)
 
 # Install to python package directory
 install(TARGETS _balatro_core DESTINATION ${CMAKE_SOURCE_DIR}/python/balatro_env)
