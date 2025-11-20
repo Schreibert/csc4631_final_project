@@ -1,4 +1,4 @@
-#include "balatro/card.hpp"
+#include "../include/balatro/card.hpp"
 #include <algorithm>
 
 namespace balatro {

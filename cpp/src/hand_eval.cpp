@@ -1,7 +1,6 @@
-#include "balatro/hand_eval.hpp"
+#include "../include/balatro/hand_eval.hpp"
 #include <algorithm>
 #include <functional>
-#include <unordered_map>
 
 namespace balatro {
 
@@ -159,7 +158,7 @@ HandEvaluation find_best_hand(const std::vector<Card>& cards) {
     HandEvaluation best;
     best.type = HandType::HIGH_CARD;
 
-    int n = cards.size();
+    int n = static_cast<int>(cards.size());
     std::vector<int> indices(5);
 
     // Generate all C(n,5) combinations

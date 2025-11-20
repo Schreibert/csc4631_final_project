@@ -21,7 +21,9 @@ constexpr int HAND_SIZE = 8;
 // Rank and suit extraction
 inline int get_rank(Card card) { return card / NUM_SUITS; }
 inline int get_suit(Card card) { return card % NUM_SUITS; }
-inline Card make_card(int rank, int suit) { return rank * NUM_SUITS + suit; }
+inline Card make_card(int rank, int suit) {
+    return static_cast<Card>(rank * NUM_SUITS + suit);
+}
 
 // Rank values for scoring (2=0, 3=1, ..., 10=8, J=9, Q=10, K=11, A=12)
 // Per the ruleset, we need to add rank values to base chips

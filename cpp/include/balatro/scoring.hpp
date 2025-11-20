@@ -1,6 +1,6 @@
 #pragma once
 
-#include "balatro/hand_eval.hpp"
+#include "hand_eval.hpp"
 
 namespace balatro {
 

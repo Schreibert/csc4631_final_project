@@ -1,6 +1,6 @@
 #pragma once
 
-#include "balatro/card.hpp"
+#include "card.hpp"
 #include <vector>
 #include <array>
 

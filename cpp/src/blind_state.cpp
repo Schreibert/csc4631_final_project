@@ -1,5 +1,6 @@
-#include "balatro/blind_state.hpp"
-#include "balatro/scoring.hpp"
+#include "../include/balatro/blind_state.hpp"
+#include "../include/balatro/scoring.hpp"
+#include "../include/balatro/hand_eval.hpp"
 #include <algorithm>
 
 namespace balatro {
@@ -24,33 +25,44 @@ void BlindState::reset(int target_score, uint64_t seed) {
 Observation BlindState::get_observation() const {
     Observation obs;
 
-    obs[OBS_PLAYS_LEFT] = plays_left_;
-    obs[OBS_DISCARDS_LEFT] = discards_left_;
-    obs[OBS_CHIPS_TO_TARGET] = std::max(0, target_score_ - chips_);
-    obs[OBS_HAS_PAIR] = has_pair(hand_) ? 1 : 0;
-    obs[OBS_HAS_TRIPS] = has_three_of_kind(hand_) ? 1 : 0;
-    obs[OBS_STRAIGHT_POT] = has_straight_potential(hand_) ? 1 : 0;
-    obs[OBS_FLUSH_POT] = has_flush_potential(hand_) ? 1 : 0;
-    obs[OBS_MAX_RANK_BUCKET] = get_max_rank_bucket(hand_);
+    // State features
+    obs.plays_left = plays_left_;
+    obs.discards_left = discards_left_;
+    obs.chips = chips_;
+    obs.chips_to_target = std::max(0, target_score_ - chips_);
+    obs.deck_remaining = deck_.remaining();
+    obs.discard_pile_size = 0; // TODO: Add discard pile tracking to Deck class
+
+    // Hand analysis features
+    obs.has_pair = has_pair(hand_) ? 1 : 0;
+    obs.has_trips = has_three_of_kind(hand_) ? 1 : 0;
+    obs.straight_potential = has_straight_potential(hand_) ? 1 : 0;
+    obs.flush_potential = has_flush_potential(hand_) ? 1 : 0;
+
+    // Current hand cards
+    for (int i = 0; i < HAND_SIZE; ++i) {
+        obs.card_ranks[i] = get_rank(hand_[i]);
+        obs.card_suits[i] = get_suit(hand_[i]);
+    }
 
     return obs;
 }
 
-int BlindState::play_hand(const std::vector<int>& card_indices) {
+int BlindState::play_hand(const Action& action) {
     if (done_ || plays_left_ <= 0) {
         return 0; // No action if done or no plays left
     }
 
-    // Build subset of cards to play
-    std::vector<Card> cards_to_play;
-    for (int idx : card_indices) {
-        if (idx >= 0 && idx < HAND_SIZE) {
-            cards_to_play.push_back(hand_[idx]);
-        }
+    // Validate action (should be done before calling, but double-check)
+    if (!is_valid_action(action)) {
+        return 0; // Invalid action
     }
 
-    if (cards_to_play.empty()) {
-        return 0; // Invalid play
+    // Convert mask to indices and build card subset
+    std::vector<int> card_indices = mask_to_indices(action.card_mask);
+    std::vector<Card> cards_to_play;
+    for (int idx : card_indices) {
+        cards_to_play.push_back(hand_[idx]);
     }
 
     // Evaluate and score
@@ -70,19 +82,66 @@ int BlindState::play_hand(const std::vector<int>& card_indices) {
     return chips_ - old_chips; // Chip delta for reward
 }
 
-void BlindState::discard_cards(const std::vector<int>& card_indices) {
+void BlindState::discard_cards(const Action& action) {
     if (done_ || discards_left_ <= 0) {
         return; // No action if done or no discards left
     }
 
-    if (card_indices.empty()) {
-        return; // Invalid discard
+    // Validate action
+    if (!is_valid_action(action)) {
+        return; // Invalid action
     }
 
     discards_left_--;
 
-    // Replace discarded cards
+    // Convert mask to indices and replace cards
+    std::vector<int> card_indices = mask_to_indices(action.card_mask);
     replace_cards(deck_, hand_, card_indices);
+}
+
+bool BlindState::is_valid_action(const Action& action) const {
+    // Count selected cards
+    int count = 0;
+    for (bool selected : action.card_mask) {
+        if (selected) count++;
+    }
+
+    // Must select at least 1 card
+    if (count == 0) {
+        return false;
+    }
+
+    // If playing, must select at most 5 cards
+    if (action.type == Action::PLAY && count > 5) {
+        return false;
+    }
+
+    // If playing, must have plays left
+    if (action.type == Action::PLAY && plays_left_ <= 0) {
+        return false;
+    }
+
+    // If discarding, must have discards left
+    if (action.type == Action::DISCARD && discards_left_ <= 0) {
+        return false;
+    }
+
+    // Can't take action if episode is done
+    if (done_) {
+        return false;
+    }
+
+    return true;
+}
+
+std::vector<int> BlindState::mask_to_indices(const std::array<bool, HAND_SIZE>& mask) const {
+    std::vector<int> indices;
+    for (int i = 0; i < HAND_SIZE; ++i) {
+        if (mask[i]) {
+            indices.push_back(i);
+        }
+    }
+    return indices;
 }
 
 void BlindState::check_termination() {
