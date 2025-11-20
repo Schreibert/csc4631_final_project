@@ -49,21 +49,19 @@ cd final_project
 
 2. **Build C++ core and bindings**
 ```bash
-mkdir build && cd build
+# Windows
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+cmake --build build --config Release --target _balatro_core
+
+# Linux/Mac
+mkdir -p build && cd build
 cmake .. -DBUILD_TESTS=ON -DBUILD_PYTHON_BINDINGS=ON
 cmake --build . --config Release
 ```
 
-3. **Copy Python module to package**
-```bash
-# Windows
-cp build/bindings/Release/_balatro_core.cp311-win_amd64.pyd python/balatro_env/
+The Python module (`.pyd` or `.so`) is **automatically copied** to `python/balatro_env/` after each build - no manual copying needed!
 
-# Linux/Mac
-cp build/bindings/_balatro_core.*.so python/balatro_env/
-```
-
-4. **Run tests**
+3. **Run tests**
 ```bash
 # C++ tests (41 tests)
 cd build && ctest -C Release
