@@ -5,10 +5,8 @@ A high-performance C++ poker game simulator with Python bindings, designed for r
 ## Project Overview
 
 This simulator provides:
-- **Ultra-fast C++ core** with deterministic gameplay
+- **C++ core** with deterministic gameplay
 - **Python bindings** via pybind11 for easy RL integration
-- **Gym-style API** compatible with standard RL frameworks
-- **Batched stepping** for improved performance
 - **Deterministic replay** for reproducible experiments
 
 ## Architecture
@@ -44,7 +42,7 @@ tools/                 - Utilities
 
 1. **Clone and navigate to project**
 ```bash
-cd final_project
+cd csc4631_final_project
 ```
 
 2. **Build C++ core and bindings**
@@ -59,73 +57,16 @@ cmake .. -DBUILD_TESTS=ON -DBUILD_PYTHON_BINDINGS=ON
 cmake --build . --config Release
 ```
 
-The Python module (`.pyd` or `.so`) is **automatically copied** to `python/balatro_env/` after each build - no manual copying needed!
+The Python module (`.pyd` or `.so`) is **automatically copied** to `python/balatro_env/`
 
 3. **Run tests**
 ```bash
 # C++ tests (41 tests)
-cd build && ctest -C Release
+cd build\cpp\tests
+ctest -C Release
 
 # Python tests (7 tests)
 cd python && python tests/test_determinism.py
-```
-
-## Usage
-
-### Basic Example (C++ Bindings)
-
-```python
-import sys
-sys.path.insert(0, 'python/balatro_env')
-import _balatro_core as core
-
-# Create simulator
-sim = core.Simulator()
-
-# Reset episode
-obs = sim.reset(target_score=300, seed=12345)
-print(f"Initial observation: {list(obs)}")
-
-# Take actions
-actions = [core.ACTION_PLAY_BEST, core.ACTION_DISCARD_LOWEST_3]
-result = sim.step_batch(actions)
-
-print(f"Rewards: {list(result.rewards)}")
-print(f"Done: {result.done}, Win: {result.win}")
-```
-
-### With Gymnasium Wrapper
-
-```python
-# Requires: pip install gymnasium numpy
-
-from balatro_env import BalatroBatchedSimEnv
-
-env = BalatroBatchedSimEnv(target_score=300)
-
-obs, info = env.reset(seed=42)
-
-for _ in range(10):
-    action = env.action_space.sample()
-    obs, reward, terminated, truncated, info = env.step(action)
-
-    if terminated:
-        print(f"Episode ended. Win: {info['win']}, Chips: {info['chips']}")
-        break
-```
-
-### Seed Replay Tool
-
-```bash
-python tools/seed_replay/replay.py 300 12345 0 2 0 1
-
-# Output:
-# Replaying episode:
-#   Target Score: 300
-#   Seed: 12345
-#   Actions: [0, 2, 0, 1]
-# ...
-# [PASS] Determinism verified
 ```
 
 ## Game Rules (v0 Simplified Ruleset)
@@ -191,42 +132,6 @@ Example: Full House K♣K♦K♥A♠A♣
 - Action space validation
 - Episode termination (win/loss)
 - Padding after done
-
-## Performance
-
-The batched step interface significantly reduces Python/C++ call overhead:
-
-```python
-# Slow: 4 separate calls
-for action in actions:
-    result = sim.step_batch([action])
-
-# Fast: Single batched call
-result = sim.step_batch(actions)
-```
-
-## Development
-
-### Running All Tests
-
-```bash
-# C++ tests
-cd build && ctest -C Release --output-on-failure
-
-# Python tests
-cd python && python tests/test_determinism.py
-
-# Seed replay validation
-python tools/seed_replay/replay.py 300 12345 0 2 0
-```
-
-### Example Scripts
-
-```bash
-# Random agent baseline
-python python/examples/random_agent.py
-# Output: ~47% win rate on target_score=300
-```
 
 ## Limitations (v0)
 
