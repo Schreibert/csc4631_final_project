@@ -1,4 +1,4 @@
-#include "balatro/scoring.hpp"
+#include "../include/balatro/scoring.hpp"
 
 namespace balatro {
 
