@@ -1,129 +1,113 @@
 #!/usr/bin/env python3
 """
-Random agent with direct card control.
+Random agent using Gymnasium wrapper.
 
-Demonstrates the new action interface where the agent selects specific cards
-to play or discard instead of using predefined action codes.
+Demonstrates using the BalatroBatchedSimEnv with proper seeding
+for reproducible random episodes.
 """
 
 import sys
 import os
-import random
+import numpy as np
 
 # Add package to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'balatro_env'))
-import _balatro_core as core
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
+from balatro_env import BalatroBatchedSimEnv
 
 
-# Card names for pretty printing
-RANK_NAMES = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
-SUIT_SYMBOLS = ['♣', '♦', '♥', '♠']
+def generate_random_action(obs, np_random):
+    """Generate a random valid action based on current observation"""
+    plays_left = obs['plays_left']
+    discards_left = obs['discards_left']
 
-
-def print_observation(obs, step):
-    """Pretty print current observation"""
-    print(f"\n--- Step {step} ---")
-    print(f"State: plays={obs.plays_left}, discards={obs.discards_left}, " +
-          f"chips={obs.chips}/{obs.chips + obs.chips_to_target}, deck={obs.deck_remaining}")
-    print("Hand:", end=" ")
-    for i in range(core.HAND_SIZE):
-        rank = obs.card_ranks[i]
-        suit = obs.card_suits[i]
-        print(f"[{i}]{RANK_NAMES[rank]}{SUIT_SYMBOLS[suit]}", end=" ")
-    print()
-
-
-def generate_random_valid_action(obs):
-    """Generate a random valid action"""
     # Randomly choose to play or discard
-    if obs.plays_left > 0 and obs.discards_left > 0:
-        action_type = random.choice([core.PLAY, core.DISCARD])
-    elif obs.plays_left > 0:
-        action_type = core.PLAY
-    elif obs.discards_left > 0:
-        action_type = core.DISCARD
+    if plays_left > 0 and discards_left > 0:
+        action_type = np_random.choice([0, 1])  # 0=PLAY, 1=DISCARD
+    elif plays_left > 0:
+        action_type = 0  # PLAY
+    elif discards_left > 0:
+        action_type = 1  # DISCARD
     else:
         return None  # No valid actions
 
     # Generate random card selection
-    if action_type == core.PLAY:
-        # Play 1-5 cards
-        num_cards = random.randint(1, 5)
-    else:
-        # Discard 1-8 cards
-        num_cards = random.randint(1, core.HAND_SIZE)
+    if action_type == 0:  # PLAY
+        # Play 1-5 cards randomly
+        num_cards = np_random.randint(1, 6)
+    else:  # DISCARD
+        # Discard 1-8 cards randomly
+        num_cards = np_random.randint(1, 9)
 
-    # Select random card indices
-    card_indices = random.sample(range(core.HAND_SIZE), num_cards)
-    card_mask = [i in card_indices for i in range(core.HAND_SIZE)]
+    # Create random card mask
+    card_mask = np.zeros(8, dtype=np.int8)
+    selected_indices = np_random.choice(8, size=num_cards, replace=False)
+    card_mask[selected_indices] = 1
 
-    # Create action
-    action = core.Action()
-    action.type = action_type
-    action.card_mask = card_mask
-
-    return action
+    return {
+        'type': action_type,
+        'card_mask': card_mask
+    }
 
 
-def run_episode(target_score, seed, verbose=False):
-    """Run one episode with random card selections"""
-    sim = core.Simulator()
-    obs = sim.reset(target_score, seed)
+def run_episode(env, seed, verbose=False):
+    """Run one episode with random actions"""
+    obs, info = env.reset(seed=seed)
+
+    # Create RNG for this episode
+    np_random = np.random.RandomState(seed)
 
     total_reward = 0
     step = 0
 
     while step < 100:  # Max 100 steps as safety
         if verbose:
-            print_observation(obs, step)
+            plays_left = obs['plays_left']
+            discards_left = obs['discards_left']
+            chips = obs['chips'][0]
+            chips_to_target = obs['chips_to_target'][0]
+            print(f"\n--- Step {step} ---")
+            print(f"State: plays={plays_left}, discards={discards_left}, chips={chips}/{env.target_score}")
+            print(f"Cards: ranks={obs['card_ranks']}, suits={obs['card_suits']}")
 
-        # Generate random valid action
-        action = generate_random_valid_action(obs)
+        # Generate random action
+        action = generate_random_action(obs, np_random)
 
         if action is None:
             if verbose:
                 print("No valid actions available!")
             break
 
-        # Validate action (optional but good for debugging)
-        validation = sim.validate_action(action)
-        if not validation.valid:
-            if verbose:
-                print(f"Generated invalid action: {validation.error_message}")
-            break
-
-        # Display action
         if verbose:
-            action_type = "PLAY" if action.type == core.PLAY else "DISCARD"
-            selected = [i for i, selected in enumerate(action.card_mask) if selected]
+            action_type = "PLAY" if action['type'] == 0 else "DISCARD"
+            selected = [i for i, m in enumerate(action['card_mask']) if m]
             print(f"Action: {action_type} cards {selected}")
 
         # Execute action
-        result = sim.step_batch([action])
-        obs = result.final_obs
-        total_reward += result.rewards[0]
+        obs, reward, terminated, truncated, info = env.step(action)
+        total_reward += reward
         step += 1
 
-        if verbose and result.rewards[0] > 0:
-            print(f"Reward: {result.rewards[0]}")
+        if verbose and reward > 0:
+            print(f"Reward: {reward:.1f}")
 
-        if result.done:
+        if terminated:
             if verbose:
-                print(f"\n{'WIN!' if result.win else 'LOSS'}")
-                print(f"Final chips: {obs.chips}")
+                print(f"\n{'WIN!' if info['win'] else 'LOSS'}")
+                print(f"Final chips: {info['chips']}")
                 print(f"Steps: {step}")
             return {
-                'win': result.win,
+                'win': info['win'],
                 'steps': step,
                 'total_reward': total_reward,
-                'final_chips': obs.chips,
+                'final_chips': info['chips'],
             }
 
     return {
         'win': False,
         'steps': step,
         'total_reward': total_reward,
-        'final_chips': obs.chips,
+        'final_chips': info.get('chips', 0),
     }
 
 
@@ -133,15 +117,24 @@ def main():
     verbose = False  # Set to True to see detailed output
 
     print("=" * 60)
-    print("Random Agent - Direct Card Control")
+    print("Random Agent - Gymnasium Wrapper")
     print("=" * 60)
-    print(f"Running {num_episodes} episodes with random card selection...")
+    print(f"Running {num_episodes} episodes with random actions...")
     print(f"Target score: {target_score}\n")
+
+    # Create environment with YAML reward configuration
+    # By default, uses rewards_config.yaml for reward shaping
+    # You can pass reward_config_path="path/to/custom.yaml" for custom configs
+    env = BalatroBatchedSimEnv(target_score=target_score)
+
+    # Print reward configuration being used
+    print(env.reward_shaper.get_config_summary())
+    print()
 
     if verbose:
         # Run one verbose episode first
         print("\n=== Verbose Episode Example ===")
-        result = run_episode(target_score, seed=0, verbose=True)
+        result = run_episode(env, seed=42, verbose=True)
         print("\n" + "=" * 60 + "\n")
 
     wins = 0
@@ -150,7 +143,7 @@ def main():
     total_chips = 0
 
     for i in range(num_episodes):
-        result = run_episode(target_score, seed=i, verbose=False)
+        result = run_episode(env, seed=i, verbose=False)
 
         if result['win']:
             wins += 1
@@ -163,14 +156,14 @@ def main():
             print(f"Episode {i+1:3d}: " +
                   f"Win rate = {wins/(i+1):5.1%}, " +
                   f"Avg steps = {total_steps/(i+1):4.1f}, " +
-                  f"Avg reward = {total_rewards/(i+1):6.1f}, " +
+                  f"Avg reward = {total_rewards/(i+1):7.1f}, " +
                   f"Avg chips = {total_chips/(i+1):5.1f}")
 
     print(f"\n{'=' * 60}")
     print("Final Results:")
     print(f"  Win rate:       {wins/num_episodes:5.1%}")
     print(f"  Average steps:  {total_steps/num_episodes:4.1f}")
-    print(f"  Average reward: {total_rewards/num_episodes:6.1f}")
+    print(f"  Average reward: {total_rewards/num_episodes:7.1f}")
     print(f"  Average chips:  {total_chips/num_episodes:5.1f}")
     print(f"{'=' * 60}")
 
