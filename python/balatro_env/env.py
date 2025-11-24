@@ -3,11 +3,14 @@
 import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
+from typing import Optional, Dict, Any
 
 try:
     from balatro_env import _balatro_core as core
+    from balatro_env.reward_shaper import RewardShaper, create_legacy_reward_shaper
 except ImportError:
     import _balatro_core as core
+    from reward_shaper import RewardShaper, create_legacy_reward_shaper
 
 
 class BalatroBatchedSimEnv(gym.Env):
@@ -33,10 +36,17 @@ class BalatroBatchedSimEnv(gym.Env):
         - 'card_mask': MultiBinary(8) [which cards to play/discard]
 
     Rewards:
-        - Chip delta for plays
-        - +1000 bonus on win
-        - -500 penalty on loss
-        - -1 per step (optional)
+        Configurable via YAML (rewards_config.yaml) or constructor parameters.
+        Default structure:
+        - Chip gain (normalized and scaled)
+        - Win bonus (+1000) with play conservation bonus
+        - Loss penalty (-500)
+        - Step penalty (-1 per action)
+        - Threshold bonuses (75%, 90% of target)
+        - Hand quality bonuses (small, encourage strong hands)
+        - Penalties for desperate/invalid plays
+
+        See rewards_config.yaml for full configuration options.
     """
 
     metadata = {"render_modes": []}
@@ -47,11 +57,23 @@ class BalatroBatchedSimEnv(gym.Env):
         win_bonus: int = 1000,
         loss_penalty: int = 500,
         step_penalty: int = 1,
-        seed: int | None = None
+        seed: int | None = None,
+        reward_config: Optional[Dict[str, Any]] = None,
+        reward_config_path: Optional[str] = None
     ):
         super().__init__()
 
         self.target_score = target_score
+
+        # Create reward shaper (supports both new YAML config and legacy parameters)
+        if reward_config is not None or reward_config_path is not None:
+            # New: use YAML reward configuration
+            self.reward_shaper = RewardShaper(config=reward_config, config_path=reward_config_path)
+        else:
+            # Legacy: use constructor parameters for backwards compatibility
+            self.reward_shaper = create_legacy_reward_shaper(win_bonus, loss_penalty, step_penalty)
+
+        # Keep legacy parameters as attributes for backwards compatibility
         self.win_bonus = win_bonus
         self.loss_penalty = loss_penalty
         self.step_penalty = step_penalty
@@ -114,6 +136,9 @@ class BalatroBatchedSimEnv(gym.Env):
         obs = self.sim.reset(self.target_score, episode_seed)
         self._last_obs = obs
 
+        # Reset reward shaper episode state
+        self.reward_shaper.reset_episode_state()
+
         return self._obs_to_dict(obs), {}
 
     def step(self, action: dict):
@@ -134,15 +159,22 @@ class BalatroBatchedSimEnv(gym.Env):
         obs_dict = self._obs_to_dict(result.final_obs)
         self._last_obs = result.final_obs
 
-        # Calculate reward with shaping
-        reward = result.rewards[0] - self.step_penalty
+        # Calculate reward using reward shaper
+        # Convert action dict to simple action code (for hand type inference)
+        # For now, we don't have direct action codes, so we'll use a placeholder
+        action_code = 0 if action['type'] == 0 else 6  # PLAY=0, DISCARD=6
 
-        # Add terminal bonuses
-        if result.done:
-            if result.win:
-                reward += self.win_bonus
-            else:
-                reward -= self.loss_penalty
+        reward = self.reward_shaper.shape_reward(
+            raw_chip_delta=result.rewards[0],
+            current_chips=result.final_obs.chips,
+            target_score=self.target_score,
+            action=action_code,
+            plays_left=result.final_obs.plays_left,
+            discards_left=result.final_obs.discards_left,
+            done=result.done,
+            win=result.win,
+            hand_type=None  # We don't have hand type info from C++ yet
+        )
 
         terminated = result.done
         truncated = False
@@ -150,6 +182,7 @@ class BalatroBatchedSimEnv(gym.Env):
         info = {
             'win': result.win,
             'chips': result.final_obs.chips,
+            'raw_reward': result.rewards[0],  # Include raw reward for debugging
         }
 
         return obs_dict, reward, terminated, truncated, info
@@ -167,6 +200,10 @@ class BalatroBatchedSimEnv(gym.Env):
             terminated: bool
             truncated: bool (always False)
             info: dict with 'win' and 'chips'
+
+        Note: In batch mode, threshold bonuses are approximated since we don't
+        have intermediate observations. For precise threshold tracking, use
+        single-step mode.
         """
         # Convert gym actions to C++ Actions
         cpp_actions = []
@@ -181,15 +218,37 @@ class BalatroBatchedSimEnv(gym.Env):
         obs_dict = self._obs_to_dict(result.final_obs)
         self._last_obs = result.final_obs
 
-        # Apply reward shaping to all steps
-        rewards = [r - self.step_penalty for r in result.rewards]
+        # Apply reward shaping to each step
+        # Note: We approximate chip progression since we only have final observation
+        shaped_rewards = []
+        cumulative_chips = self.reward_shaper.previous_chips  # Start from previous episode state
 
-        # Add terminal bonus to final step if done
-        if result.done and rewards:
-            if result.win:
-                rewards[-1] += self.win_bonus
-            else:
-                rewards[-1] -= self.loss_penalty
+        for i, (raw_reward, action) in enumerate(zip(result.rewards, actions)):
+            # Estimate chips at this step
+            cumulative_chips += raw_reward
+            is_last_step = (i == len(actions) - 1)
+            is_done = result.done and is_last_step
+
+            # Convert action dict to action code
+            action_code = 0 if action['type'] == 0 else 6  # PLAY=0, DISCARD=6
+
+            # For batch mode, we approximate plays_left/discards_left
+            # (exact tracking would require intermediate observations)
+            approx_plays_left = result.final_obs.plays_left
+            approx_discards_left = result.final_obs.discards_left
+
+            shaped_reward = self.reward_shaper.shape_reward(
+                raw_chip_delta=raw_reward,
+                current_chips=cumulative_chips if is_last_step else cumulative_chips,
+                target_score=self.target_score,
+                action=action_code,
+                plays_left=approx_plays_left,
+                discards_left=approx_discards_left,
+                done=is_done,
+                win=result.win if is_done else False,
+                hand_type=None
+            )
+            shaped_rewards.append(shaped_reward)
 
         terminated = result.done
         truncated = False
@@ -197,10 +256,10 @@ class BalatroBatchedSimEnv(gym.Env):
         info = {
             'win': result.win,
             'chips': result.final_obs.chips,
-            'raw_rewards': result.rewards,  # Unmodified rewards
+            'raw_rewards': result.rewards,  # Unmodified rewards for debugging
         }
 
-        return obs_dict, rewards, terminated, truncated, info
+        return obs_dict, shaped_rewards, terminated, truncated, info
 
     def render(self):
         """Not implemented for v0"""
