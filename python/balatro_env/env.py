@@ -66,12 +66,20 @@ class BalatroBatchedSimEnv(gym.Env):
         self.target_score = target_score
 
         # Create reward shaper (supports both new YAML config and legacy parameters)
+        # Check if user is explicitly using legacy mode (passed non-default values)
+        using_legacy_params = (
+            win_bonus != 1000 or loss_penalty != 500 or step_penalty != 1
+        )
+
         if reward_config is not None or reward_config_path is not None:
-            # New: use YAML reward configuration
+            # Explicit YAML config provided
             self.reward_shaper = RewardShaper(config=reward_config, config_path=reward_config_path)
-        else:
-            # Legacy: use constructor parameters for backwards compatibility
+        elif using_legacy_params and reward_config is None and reward_config_path is None:
+            # Legacy mode: user passed custom legacy params and no YAML config
             self.reward_shaper = create_legacy_reward_shaper(win_bonus, loss_penalty, step_penalty)
+        else:
+            # Default: load default YAML config
+            self.reward_shaper = RewardShaper()
 
         # Keep legacy parameters as attributes for backwards compatibility
         self.win_bonus = win_bonus
