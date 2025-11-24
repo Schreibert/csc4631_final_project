@@ -8,6 +8,7 @@ for reproducible random episodes.
 
 import sys
 import os
+import argparse
 import numpy as np
 
 # Add package to path
@@ -112,20 +113,60 @@ def run_episode(env, seed, verbose=False):
 
 
 def main():
-    target_score = 300
-    num_episodes = 100
-    verbose = False  # Set to True to see detailed output
+    parser = argparse.ArgumentParser(
+        description="Run random agent on Balatro poker environment",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=0,
+        help="Starting seed for episode generation (episodes will use seed, seed+1, seed+2, ...)"
+    )
+    parser.add_argument(
+        "--target-score",
+        type=int,
+        default=300,
+        help="Target score to beat the blind"
+    )
+    parser.add_argument(
+        "--num-episodes",
+        type=int,
+        default=100,
+        help="Number of episodes to run"
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Print detailed episode information"
+    )
+    parser.add_argument(
+        "--reward-config",
+        type=str,
+        default=None,
+        help="Path to custom reward configuration YAML file"
+    )
+
+    args = parser.parse_args()
+
+    target_score = args.target_score
+    num_episodes = args.num_episodes
+    verbose = args.verbose
+    starting_seed = args.seed
 
     print("=" * 60)
     print("Random Agent - Gymnasium Wrapper")
     print("=" * 60)
     print(f"Running {num_episodes} episodes with random actions...")
-    print(f"Target score: {target_score}\n")
+    print(f"Target score: {target_score}")
+    print(f"Starting seed: {starting_seed}\n")
 
     # Create environment with YAML reward configuration
     # By default, uses rewards_config.yaml for reward shaping
-    # You can pass reward_config_path="path/to/custom.yaml" for custom configs
-    env = BalatroBatchedSimEnv(target_score=target_score)
+    env = BalatroBatchedSimEnv(
+        target_score=target_score,
+        reward_config_path=args.reward_config
+    )
 
     # Print reward configuration being used
     print(env.reward_shaper.get_config_summary())
@@ -134,7 +175,7 @@ def main():
     if verbose:
         # Run one verbose episode first
         print("\n=== Verbose Episode Example ===")
-        result = run_episode(env, seed=42, verbose=True)
+        result = run_episode(env, seed=starting_seed, verbose=True)
         print("\n" + "=" * 60 + "\n")
 
     wins = 0
@@ -143,7 +184,7 @@ def main():
     total_chips = 0
 
     for i in range(num_episodes):
-        result = run_episode(env, seed=i, verbose=False)
+        result = run_episode(env, seed=starting_seed + i, verbose=False)
 
         if result['win']:
             wins += 1
