@@ -142,9 +142,15 @@ def main():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     parser.add_argument(
+        "--mode",
+        choices=["run", "eval"],
+        default="run",
+        help="Mode: 'run' for batch episodes with stats, 'eval' for visualized evaluation"
+    )
+    parser.add_argument(
         "--seed",
         type=int,
-        default=0,
+        default=42,
         help="Starting seed for episode generation (episodes will use seed, seed+1, seed+2, ...)"
     )
     parser.add_argument(
@@ -154,7 +160,7 @@ def main():
         help="Target score to beat the blind"
     )
     parser.add_argument(
-        "--num-episodes",
+        "--episodes",
         type=int,
         default=100,
         help="Number of episodes to run"
@@ -162,7 +168,7 @@ def main():
     parser.add_argument(
         "--verbose",
         action="store_true",
-        help="Print detailed episode information"
+        help="Print detailed episode information (legacy mode)"
     )
     parser.add_argument(
         "--reward-config",
@@ -184,8 +190,12 @@ def main():
 
     args = parser.parse_args()
 
+    # --mode eval implies --visualize
+    if args.mode == "eval":
+        args.visualize = True
+
     target_score = args.target_score
-    num_episodes = args.num_episodes
+    num_episodes = args.episodes
     verbose = args.verbose
     visualize = args.visualize
     viz_mode = args.viz_mode
