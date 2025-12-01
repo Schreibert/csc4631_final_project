@@ -1,0 +1,58 @@
+# Dense Normalized Reward Configuration
+# Combines frequent feedback with normalized [-1, 1] scaling for better learning
+
+# Terminal Outcomes - Normalized and balanced
+outcome:
+  win_bonus: 1.0              # Base reward for winning
+  loss_penalty: 1.0            # Symmetric penalty for losing
+
+# Efficiency - Encourage smart resource usage
+efficiency:
+  play_conservation_bonus: 0.25  # Per unused play (max 1.0 for all 4 plays)
+  step_penalty: 0.02             # Small penalty per action (~0.1 for typical episode)
+
+# Progress Rewards - Make intermediate progress meaningful
+progress:
+  chip_gain_scale: 1.0
+  chip_normalization: 300        # Normalize to target score (300 chips = +1.0 reward)
+                                  # Makes incremental progress 10x more important than before
+
+  # Milestone bonuses - Reward getting close to winning
+  target_threshold_bonuses:
+    - threshold: 0.75            # Reaching 225/300 chips
+      bonus: 0.25
+    - threshold: 0.90            # Reaching 270/300 chips
+      bonus: 0.5
+
+# Hand Quality - Small bonuses for playing strong hands
+hand_quality:
+  enabled: true
+  bonuses:
+    high_card: 0.0
+    pair: 0.01
+    two_pair: 0.02
+    three_of_a_kind: 0.03
+    straight: 0.04
+    flush: 0.05
+    full_house: 0.06
+    four_of_a_kind: 0.08
+    straight_flush: 0.10
+
+# Penalties - Discourage bad play patterns
+penalties:
+  desperate_play_penalty: 0.1    # Small penalty for risky plays when close to winning
+  invalid_action_penalty: 0.5    # Penalty for attempting invalid actions
+
+# Typical Reward Ranges with this config:
+# - Loss (7 steps, 50 chips gained): -1.0 + 0.17 - 0.14 ≈ -0.97
+# - Close loss (7 steps, 250 chips): -1.0 + 0.83 + 0.25 - 0.14 ≈ -0.06
+# - Bare win (0 unused plays, 5 steps): 1.0 + 1.0 + 0.75 - 0.10 ≈ 2.65
+# - Good win (2 unused plays, 4 steps): 1.0 + 0.5 + 1.0 + 0.75 - 0.08 ≈ 3.17
+# - Perfect win (4 unused plays, 3 steps): 1.0 + 1.0 + 1.0 + 0.75 - 0.06 ≈ 3.69
+#
+# Key improvements over original config:
+# 1. Much lower variance (~5 range vs ~1500)
+# 2. Dense feedback - chip progress is meaningful (10x more important)
+# 3. Close losses get better rewards than terrible losses (learning signal)
+# 4. Threshold bonuses provide intermediate goals
+# 5. Normalized scale improves Q-learning stability

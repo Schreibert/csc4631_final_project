@@ -23,6 +23,10 @@ class BalatroBatchedSimEnv(gym.Env):
         - 'discards_left': Discrete(4) [0-3]
         - 'chips': Box(1) [current chips scored]
         - 'chips_to_target': Box(1) [chips needed to win]
+        - 'deck_remaining': Box(1) [cards left in deck, 0-52]
+        - 'discard_pile_size': Box(1) [cards in discard pile, 0-52]
+        - 'num_face_cards': Box(1) [face cards (J,Q,K) in hand, 0-8]
+        - 'num_aces': Box(1) [aces in hand, 0-8]
         - 'card_ranks': MultiDiscrete([13] * 8) [rank of each card in hand, 0-12]
         - 'card_suits': MultiDiscrete([4] * 8) [suit of each card in hand, 0-3]
         - 'has_pair': Discrete(2) [0/1]
@@ -95,12 +99,26 @@ class BalatroBatchedSimEnv(gym.Env):
             'discards_left': spaces.Discrete(4),
             'chips': spaces.Box(low=0, high=np.inf, shape=(1,), dtype=np.int32),
             'chips_to_target': spaces.Box(low=0, high=np.inf, shape=(1,), dtype=np.int32),
+            'deck_remaining': spaces.Box(low=0, high=52, shape=(1,), dtype=np.int32),
+            'discard_pile_size': spaces.Box(low=0, high=52, shape=(1,), dtype=np.int32),
+            'num_face_cards': spaces.Box(low=0, high=core.HAND_SIZE, shape=(1,), dtype=np.int32),
+            'num_aces': spaces.Box(low=0, high=core.HAND_SIZE, shape=(1,), dtype=np.int32),
             'card_ranks': spaces.MultiDiscrete([core.NUM_RANKS] * core.HAND_SIZE),
             'card_suits': spaces.MultiDiscrete([core.NUM_SUITS] * core.HAND_SIZE),
             'has_pair': spaces.Discrete(2),
             'has_trips': spaces.Discrete(2),
             'straight_potential': spaces.Discrete(2),
             'flush_potential': spaces.Discrete(2),
+            # Best hand analysis (for RL agents)
+            'best_hand_type': spaces.Discrete(9),  # 0-8 (HandType enum)
+            'best_hand_score': spaces.Box(low=0, high=np.inf, shape=(1,), dtype=np.int32),
+            # Complete hand pattern flags
+            'has_two_pair': spaces.Discrete(2),
+            'has_full_house': spaces.Discrete(2),
+            'has_four_of_kind': spaces.Discrete(2),
+            'has_straight': spaces.Discrete(2),
+            'has_flush': spaces.Discrete(2),
+            'has_straight_flush': spaces.Discrete(2),
         })
 
         # Define action space (Dict)
@@ -121,12 +139,26 @@ class BalatroBatchedSimEnv(gym.Env):
             'discards_left': obs.discards_left,
             'chips': np.array([obs.chips], dtype=np.int32),
             'chips_to_target': np.array([obs.chips_to_target], dtype=np.int32),
-            'card_ranks': np.array(obs.card_ranks, dtype=np.int32),
-            'card_suits': np.array(obs.card_suits, dtype=np.int32),
+            'deck_remaining': np.array([obs.deck_remaining], dtype=np.int32),
+            'discard_pile_size': np.array([obs.discard_pile_size], dtype=np.int32),
+            'num_face_cards': np.array([obs.num_face_cards], dtype=np.int32),
+            'num_aces': np.array([obs.num_aces], dtype=np.int32),
+            'card_ranks': obs.card_ranks,  # Already a numpy array from C++
+            'card_suits': obs.card_suits,  # Already a numpy array from C++
             'has_pair': obs.has_pair,
             'has_trips': obs.has_trips,
             'straight_potential': obs.straight_potential,
             'flush_potential': obs.flush_potential,
+            # Best hand analysis
+            'best_hand_type': obs.best_hand_type,
+            'best_hand_score': np.array([obs.best_hand_score], dtype=np.int32),
+            # Complete hand pattern flags
+            'has_two_pair': obs.has_two_pair,
+            'has_full_house': obs.has_full_house,
+            'has_four_of_kind': obs.has_four_of_kind,
+            'has_straight': obs.has_straight,
+            'has_flush': obs.has_flush,
+            'has_straight_flush': obs.has_straight_flush,
         }
 
     def reset(self, seed: int | None = None, options: dict | None = None):
@@ -276,3 +308,60 @@ class BalatroBatchedSimEnv(gym.Env):
     def close(self):
         """Clean up resources"""
         pass
+
+    # RL helper methods (expose C++ functionality)
+
+    def get_best_hand(self):
+        """
+        Get the best possible poker hand from current state.
+
+        Returns:
+            HandEvaluation object with type and rank_sum
+        """
+        return self.sim.get_best_hand()
+
+    def predict_score(self, action: dict) -> int:
+        """
+        Predict the score for a PLAY action without executing it.
+
+        Args:
+            action: Action dict with 'type' and 'card_mask'
+
+        Returns:
+            Predicted chip score (0 if action is DISCARD)
+        """
+        if action['type'] != 0:  # Not a PLAY action
+            return 0
+
+        # Convert to bool array
+        card_mask = [bool(x) for x in action['card_mask']]
+        return self.sim.predict_play_score(card_mask)
+
+    def get_valid_actions_with_scores(self):
+        """
+        Enumerate all valid actions with predicted outcomes.
+
+        Returns:
+            List of ActionOutcome objects with:
+                - action: Action dict
+                - valid: bool
+                - predicted_chips: int
+                - predicted_hand_type: int (HandType enum value)
+        """
+        cpp_outcomes = self.sim.enumerate_all_actions()
+
+        # Convert C++ ActionOutcome objects to Python dicts
+        outcomes = []
+        for cpp_outcome in cpp_outcomes:
+            outcome = {
+                'action': {
+                    'type': 0 if cpp_outcome.action.type == core.PLAY else 1,
+                    'card_mask': np.array(cpp_outcome.action.card_mask, dtype=np.int8)
+                },
+                'valid': cpp_outcome.valid,
+                'predicted_chips': cpp_outcome.predicted_chips,
+                'predicted_hand_type': cpp_outcome.predicted_hand_type
+            }
+            outcomes.append(outcome)
+
+        return outcomes

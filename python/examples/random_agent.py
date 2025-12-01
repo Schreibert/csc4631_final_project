@@ -15,6 +15,7 @@ import numpy as np
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from balatro_env import BalatroBatchedSimEnv
+from agent_visualizer import AgentVisualizer
 
 
 def generate_random_action(obs, np_random):
@@ -37,8 +38,8 @@ def generate_random_action(obs, np_random):
         # Play 1-5 cards randomly
         num_cards = np_random.randint(1, 6)
     else:  # DISCARD
-        # Discard 1-8 cards randomly
-        num_cards = np_random.randint(1, 9)
+        # Discard 1-5 cards randomly
+        num_cards = np_random.randint(1, 6)
 
     # Create random card mask
     card_mask = np.zeros(8, dtype=np.int8)
@@ -51,18 +52,32 @@ def generate_random_action(obs, np_random):
     }
 
 
-def run_episode(env, seed, verbose=False):
-    """Run one episode with random actions"""
+def run_episode(env, seed, verbose=False, visualize=False, viz_mode='full'):
+    """Run one episode with random actions
+
+    Args:
+        env: Environment instance
+        seed: Random seed for episode
+        verbose: Legacy verbose mode (prints raw state)
+        visualize: If True, use AgentVisualizer to show decisions
+        viz_mode: 'full' for detailed view, 'compact' for one-line summaries
+    """
     obs, info = env.reset(seed=seed)
 
     # Create RNG for this episode
     np_random = np.random.RandomState(seed)
 
+    # Create visualizer if requested
+    visualizer = None
+    if visualize:
+        visualizer = AgentVisualizer()
+        visualizer.reset_episode()
+
     total_reward = 0
     step = 0
 
     while step < 100:  # Max 100 steps as safety
-        if verbose:
+        if verbose and not visualize:
             plays_left = obs['plays_left']
             discards_left = obs['discards_left']
             chips = obs['chips'][0]
@@ -75,25 +90,34 @@ def run_episode(env, seed, verbose=False):
         action = generate_random_action(obs, np_random)
 
         if action is None:
-            if verbose:
+            if verbose or visualize:
                 print("No valid actions available!")
             break
 
-        if verbose:
+        if verbose and not visualize:
             action_type = "PLAY" if action['type'] == 0 else "DISCARD"
             selected = [i for i, m in enumerate(action['card_mask']) if m]
             print(f"Action: {action_type} cards {selected}")
 
         # Execute action
-        obs, reward, terminated, truncated, info = env.step(action)
+        next_obs, reward, terminated, truncated, info = env.step(action)
         total_reward += reward
         step += 1
 
-        if verbose and reward > 0:
+        # Visualize decision
+        if visualize:
+            if viz_mode == 'compact':
+                visualizer.visualize_step_compact(obs, action, next_obs, reward, info)
+            else:  # full mode
+                visualizer.visualize_step(obs, action, next_obs, reward, info)
+
+        obs = next_obs
+
+        if verbose and reward > 0 and not visualize:
             print(f"Reward: {reward:.1f}")
 
         if terminated:
-            if verbose:
+            if verbose and not visualize:
                 print(f"\n{'WIN!' if info['win'] else 'LOSS'}")
                 print(f"Final chips: {info['chips']}")
                 print(f"Steps: {step}")
@@ -146,12 +170,25 @@ def main():
         default=None,
         help="Path to custom reward configuration YAML file"
     )
+    parser.add_argument(
+        "--visualize",
+        action="store_true",
+        help="Show agent decisions with card details (hand dealt, action, result)"
+    )
+    parser.add_argument(
+        "--viz-mode",
+        choices=["full", "compact"],
+        default="full",
+        help="Visualization mode: 'full' for detailed view, 'compact' for one-line summaries"
+    )
 
     args = parser.parse_args()
 
     target_score = args.target_score
     num_episodes = args.num_episodes
     verbose = args.verbose
+    visualize = args.visualize
+    viz_mode = args.viz_mode
     starting_seed = args.seed
 
     print("=" * 60)
@@ -159,7 +196,10 @@ def main():
     print("=" * 60)
     print(f"Running {num_episodes} episodes with random actions...")
     print(f"Target score: {target_score}")
-    print(f"Starting seed: {starting_seed}\n")
+    print(f"Starting seed: {starting_seed}")
+    if visualize:
+        print(f"Visualization: {viz_mode} mode")
+    print()
 
     # Create environment with YAML reward configuration
     # By default, uses rewards_config.yaml for reward shaping
@@ -169,22 +209,40 @@ def main():
     )
 
     # Print reward configuration being used
-    print(env.reward_shaper.get_config_summary())
-    print()
+    if not visualize:  # Skip config summary in visualize mode to reduce clutter
+        print(env.reward_shaper.get_config_summary())
+        print()
 
-    if verbose:
+    # If visualizing, show first episode in detail
+    if visualize and num_episodes > 0:
+        visualizer = AgentVisualizer()
+        visualizer.print_episode_header(1, target_score, seed=starting_seed)
+        result = run_episode(env, seed=starting_seed, visualize=True, viz_mode=viz_mode)
+        visualizer.print_episode_summary(result)
+
+        # If only one episode requested, we're done
+        if num_episodes == 1:
+            return
+
+        # Otherwise, continue with remaining episodes
+        print(f"\nRunning {num_episodes - 1} more episodes...\n")
+        starting_episode = 1
+    elif verbose:
         # Run one verbose episode first
         print("\n=== Verbose Episode Example ===")
         result = run_episode(env, seed=starting_seed, verbose=True)
         print("\n" + "=" * 60 + "\n")
+        starting_episode = 0
+    else:
+        starting_episode = 0
 
     wins = 0
     total_steps = 0
     total_rewards = 0
     total_chips = 0
 
-    for i in range(num_episodes):
-        result = run_episode(env, seed=starting_seed + i, verbose=False)
+    for i in range(starting_episode, num_episodes):
+        result = run_episode(env, seed=starting_seed + i, verbose=False, visualize=False)
 
         if result['win']:
             wins += 1
