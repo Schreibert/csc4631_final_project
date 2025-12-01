@@ -21,6 +21,9 @@ RANK_NAMES = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
 SUIT_NAMES = ['♣', '♦', '♥', '♠']  # Clubs, Diamonds, Hearts, Spades
 SUIT_NAMES_ASCII = ['C', 'D', 'H', 'S']  # ASCII fallback
 
+# Rank values for scoring (2-10 = face value, J/Q/K = 10, A = 11)
+RANK_VALUES = [2, 3, 4, 5, 6, 7, 8, 9, 10, 10, 10, 10, 11]
+
 HAND_TYPE_NAMES = [
     'High Card',
     'Pair',
@@ -31,6 +34,20 @@ HAND_TYPE_NAMES = [
     'Full House',
     'Four of a Kind',
     'Straight Flush'
+]
+
+# Base chips and multipliers for each hand type (from scoring.cpp)
+# Format: (base_chips, base_mult)
+HAND_SCORING = [
+    (5, 1),    # HIGH_CARD
+    (10, 2),   # PAIR
+    (20, 2),   # TWO_PAIR
+    (30, 3),   # THREE_OF_A_KIND
+    (30, 4),   # STRAIGHT
+    (35, 4),   # FLUSH
+    (40, 4),   # FULL_HOUSE
+    (60, 7),   # FOUR_OF_A_KIND
+    (100, 8)   # STRAIGHT_FLUSH
 ]
 
 
@@ -129,6 +146,160 @@ class AgentVisualizer:
             return HAND_TYPE_NAMES[hand_type_idx]
         return f"Unknown({hand_type_idx})"
 
+    def analyze_played_hand(self, obs, card_mask, chip_score):
+        """
+        Analyze played cards to determine hand type and scoring breakdown.
+
+        Uses the actual chip score to reverse-engineer which hand was made,
+        then shows the calculation breakdown.
+
+        Args:
+            obs: Observation with card_ranks and card_suits
+            card_mask: Which cards were played
+            chip_score: Actual chips scored (from C++)
+
+        Returns:
+            Dict with 'hand_type', 'hand_name', 'base_chips', 'base_mult',
+            'rank_sum', 'contributing_cards', 'formula'
+        """
+        # Get selected card ranks
+        selected_ranks = []
+        selected_cards = []
+        for i, (rank, suit, selected) in enumerate(zip(obs['card_ranks'], obs['card_suits'], card_mask)):
+            if selected:
+                selected_ranks.append(int(rank))
+                selected_cards.append((int(rank), int(suit)))
+
+        if not selected_ranks:
+            return None
+
+        # Try to determine hand type by checking each possible hand
+        # and seeing which one matches the actual score
+        for hand_type in range(8, -1, -1):  # Check from best to worst
+            base_chips, base_mult = HAND_SCORING[hand_type]
+
+            # Calculate what rank_sum would need to be for this hand type
+            # score = (base_chips + rank_sum) * base_mult
+            # rank_sum = (score / base_mult) - base_chips
+            if base_mult == 0:
+                continue
+
+            if chip_score % base_mult != 0:
+                continue
+
+            implied_rank_sum = (chip_score // base_mult) - base_chips
+
+            # Now figure out which cards contribute based on hand type
+            contributing_cards, calculated_rank_sum = self._get_contributing_cards(
+                selected_cards, hand_type
+            )
+
+            if calculated_rank_sum == implied_rank_sum:
+                # Found the matching hand type!
+                return {
+                    'hand_type': hand_type,
+                    'hand_name': HAND_TYPE_NAMES[hand_type],
+                    'base_chips': base_chips,
+                    'base_mult': base_mult,
+                    'rank_sum': calculated_rank_sum,
+                    'contributing_cards': contributing_cards,
+                    'formula': f"({base_chips} + {calculated_rank_sum}) x {base_mult} = {chip_score}"
+                }
+
+        # Fallback: couldn't determine exact hand, show what we know
+        return None
+
+    def _get_contributing_cards(self, cards, hand_type):
+        """
+        Determine which cards contribute to scoring for a given hand type.
+
+        Args:
+            cards: List of (rank, suit) tuples
+            hand_type: HandType enum value
+
+        Returns:
+            (contributing_cards, rank_sum) tuple
+        """
+        from collections import Counter
+
+        ranks = [c[0] for c in cards]
+        suits = [c[1] for c in cards]
+        rank_counts = Counter(ranks)
+
+        contributing = []
+        rank_sum = 0
+
+        if hand_type == 0:  # HIGH_CARD - only highest card
+            if ranks:
+                max_rank = max(ranks)
+                contributing = [(max_rank, suits[ranks.index(max_rank)])]
+                rank_sum = RANK_VALUES[max_rank]
+
+        elif hand_type == 1:  # PAIR - only the 2 paired cards
+            for rank, count in rank_counts.items():
+                if count >= 2:
+                    # Find the pair
+                    pair_cards = [(r, s) for r, s in cards if r == rank][:2]
+                    contributing = pair_cards
+                    rank_sum = RANK_VALUES[rank] * 2
+                    break
+
+        elif hand_type == 2:  # TWO_PAIR - only the 4 cards in both pairs
+            pairs = [r for r, c in rank_counts.items() if c >= 2]
+            if len(pairs) >= 2:
+                pairs = sorted(pairs, reverse=True)[:2]
+                for pair_rank in pairs:
+                    pair_cards = [(r, s) for r, s in cards if r == pair_rank][:2]
+                    contributing.extend(pair_cards)
+                    rank_sum += RANK_VALUES[pair_rank] * 2
+
+        elif hand_type == 3:  # THREE_OF_A_KIND - only the 3 matching cards
+            for rank, count in rank_counts.items():
+                if count >= 3:
+                    trips_cards = [(r, s) for r, s in cards if r == rank][:3]
+                    contributing = trips_cards
+                    rank_sum = RANK_VALUES[rank] * 3
+                    break
+
+        elif hand_type == 7:  # FOUR_OF_A_KIND - only the 4 matching cards
+            for rank, count in rank_counts.items():
+                if count >= 4:
+                    quad_cards = [(r, s) for r, s in cards if r == rank][:4]
+                    contributing = quad_cards
+                    rank_sum = RANK_VALUES[rank] * 4
+                    break
+
+        else:  # STRAIGHT, FLUSH, FULL_HOUSE, STRAIGHT_FLUSH - all 5 cards
+            contributing = cards[:5]
+            rank_sum = sum(RANK_VALUES[r] for r, s in contributing)
+
+        return contributing, rank_sum
+
+    def format_scoring_breakdown(self, analysis):
+        """
+        Format the scoring analysis as a readable string.
+
+        Args:
+            analysis: Dict from analyze_played_hand()
+
+        Returns:
+            Multi-line string showing the scoring breakdown
+        """
+        if analysis is None:
+            return "    (Unable to determine hand breakdown)"
+
+        lines = []
+        lines.append(f"    Hand: {analysis['hand_name']}")
+
+        # Show contributing cards
+        contrib_strs = [self.format_card(r, s) for r, s in analysis['contributing_cards']]
+        lines.append(f"    Scoring cards: [{', '.join(contrib_strs)}]")
+
+        # Show formula
+        lines.append(f"    Calculation: {analysis['formula']}")
+
+        return '\n'.join(lines)
+
     def visualize_step(self, obs, action, next_obs, reward, info, verbose=True):
         """
         Display a single step with full decision context.
@@ -175,16 +346,19 @@ class AgentVisualizer:
         print(f"    Selected: {selected_cards}")
 
         # Result
-        raw_chip_gain = info.get('raw_reward', 0)
+        raw_chip_gain = int(info.get('raw_reward', 0))
+        arrow = "->" if self.use_ascii else "→"
 
         if action['type'] == 0:  # PLAY action
-            # Try to determine what hand was played (if we have the info)
-            # For now, we'll just show the chip gain
-            arrow = "->" if self.use_ascii else "→"
             print(f"\n<<< RESULT:")
             if raw_chip_gain > 0:
-                print(f"    Chips scored: +{raw_chip_gain}")
-                print(f"    Total chips: {chips_before} {arrow} {chips_after}")
+                # Analyze the hand and show scoring breakdown
+                analysis = self.analyze_played_hand(obs, action['card_mask'], raw_chip_gain)
+                if analysis:
+                    print(self.format_scoring_breakdown(analysis))
+                else:
+                    print(f"    Chips scored: +{raw_chip_gain}")
+                print(f"    Total: {chips_before} {arrow} {chips_after}")
             else:
                 print(f"    No chips scored (invalid play or 0 points)")
         else:  # DISCARD action
