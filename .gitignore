@@ -160,3 +160,4 @@ test_results/
 # AI-generated content
 CLAUDE.md
 /python/.venv
+/python/examples/models
