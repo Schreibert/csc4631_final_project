@@ -91,9 +91,10 @@ TEST(ScoringTest, FourOfAKind) {
     auto eval = evaluate_hand(cards);
     int score = calculate_score(eval);
 
-    // base_chips=60, rank_sum=54 (11+11+11+11+10), base_mult=7
-    // (60 + 54) × 7 = 798
-    EXPECT_EQ(score, 798);
+    // Only the 4 Aces count (K doesn't contribute to four of a kind)
+    // base_chips=60, rank_sum=44 (11+11+11+11), base_mult=7
+    // (60 + 44) × 7 = 728
+    EXPECT_EQ(score, 728);
 }
 
 TEST(ScoringTest, StraightFlush) {

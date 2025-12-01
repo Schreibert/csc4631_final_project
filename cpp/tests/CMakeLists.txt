@@ -20,3 +20,25 @@ gtest_discover_tests(balatro_tests
 # Also add a simple test that just runs the executable
 # This works better with Visual Studio generator
 add_test(NAME balatro_all_tests COMMAND balatro_tests)
+
+# Enhanced observation golden test (standalone, no GTest)
+add_executable(test_enhanced_observation
+    test_enhanced_observation.cpp
+)
+
+target_link_libraries(test_enhanced_observation
+    balatro_core
+)
+
+add_test(NAME enhanced_observation_test COMMAND test_enhanced_observation)
+
+# Observation arrays debug test
+add_executable(test_observation_arrays
+    test_observation_arrays.cpp
+)
+
+target_link_libraries(test_observation_arrays
+    balatro_core
+)
+
+add_test(NAME observation_arrays_test COMMAND test_observation_arrays)

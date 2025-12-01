@@ -1,6 +1,7 @@
 #pragma once
 
 #include "card.hpp"
+#include "hand_eval.hpp"
 #include <cstdint>
 #include <array>
 
@@ -8,19 +9,33 @@ namespace balatro {
 
 // Enhanced observation with full card visibility
 struct Observation {
-    // State features (8 values)
+    // State features
     int plays_left;
     int discards_left;
     int chips;              // Current chips
     int chips_to_target;    // max(target - chips, 0)
     int deck_remaining;     // Cards left in deck
     int discard_pile_size;  // Cards in discard pile
+    int num_face_cards;    // Number of face cards in hand
+    int num_aces;          // Number of aces in hand
 
-    // Hand analysis features (4 values)
-    bool has_pair;           
-    bool has_trips;          
-    bool straight_potential; 
-    bool flush_potential;    
+    // Hand analysis features
+    bool has_pair;
+    bool has_trips;
+    bool straight_potential;
+    bool flush_potential;
+
+    // Best possible hand analysis
+    int best_hand_type;         // 0-8 (HandType enum value)
+    int best_hand_score;        // Pre-calculated chip score for best hand
+
+    // Complete hand pattern flags (actual hands, not just potential)
+    bool has_two_pair;
+    bool has_full_house;
+    bool has_four_of_kind;
+    bool has_straight;          // Actual straight
+    bool has_flush;             // Actual flush
+    bool has_straight_flush;
 
     // Current hand - 8 cards (16 values: rank, suit for each)
     int card_ranks[HAND_SIZE];  // 0-12 (2 through Ace)
@@ -40,6 +55,16 @@ struct Action {
     // Constructor for convenience
     Action() : type(PLAY), card_mask{} {}
     Action(Type t, const std::array<bool, HAND_SIZE>& mask) : type(t), card_mask(mask) {}
+};
+
+// Result of action enumeration (for RL planning)
+struct ActionOutcome {
+    Action action;
+    bool valid;
+    int predicted_chips;      // For PLAY actions only
+    int predicted_hand_type;  // For PLAY actions only (HandType enum value)
+
+    ActionOutcome() : valid(false), predicted_chips(0), predicted_hand_type(0) {}
 };
 
 // State of a single blind (episode)
@@ -85,6 +110,17 @@ public:
 
     // Validate an action
     bool is_valid_action(const Action& action) const;
+
+    // RL helper methods
+
+    // Get the best possible hand from current hand
+    HandEvaluation get_best_hand() const;
+
+    // Predict the score for a PLAY action without executing it
+    int predict_play_score(const std::array<bool, HAND_SIZE>& card_mask) const;
+
+    // Enumerate all valid actions with predicted outcomes
+    std::vector<ActionOutcome> enumerate_all_actions() const;
 
 private:
     void check_termination();

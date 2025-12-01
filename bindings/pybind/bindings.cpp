@@ -1,6 +1,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/numpy.h>
+#include <iostream>
 #include "balatro/simulator.hpp"
 
 namespace py = pybind11;
@@ -13,6 +14,41 @@ PYBIND11_MODULE(_balatro_core, m) {
     m.attr("NUM_RANKS") = balatro::NUM_RANKS;
     m.attr("NUM_SUITS") = balatro::NUM_SUITS;
 
+    // HandType enum (for hand evaluation)
+    py::enum_<balatro::HandType>(m, "HandType")
+        .value("HIGH_CARD", balatro::HandType::HIGH_CARD)
+        .value("PAIR", balatro::HandType::PAIR)
+        .value("TWO_PAIR", balatro::HandType::TWO_PAIR)
+        .value("THREE_OF_A_KIND", balatro::HandType::THREE_OF_A_KIND)
+        .value("STRAIGHT", balatro::HandType::STRAIGHT)
+        .value("FLUSH", balatro::HandType::FLUSH)
+        .value("FULL_HOUSE", balatro::HandType::FULL_HOUSE)
+        .value("FOUR_OF_A_KIND", balatro::HandType::FOUR_OF_A_KIND)
+        .value("STRAIGHT_FLUSH", balatro::HandType::STRAIGHT_FLUSH)
+        .export_values();
+
+    // HandEvaluation struct
+    py::class_<balatro::HandEvaluation>(m, "HandEvaluation")
+        .def(py::init<>())
+        .def_readonly("type", &balatro::HandEvaluation::type)
+        .def_readonly("rank_sum", &balatro::HandEvaluation::rank_sum)
+        .def("__repr__", [](const balatro::HandEvaluation& eval) {
+            return "<HandEvaluation type=" + std::to_string(static_cast<int>(eval.type)) +
+                   " rank_sum=" + std::to_string(eval.rank_sum) + ">";
+        });
+
+    // ActionOutcome struct (for action enumeration)
+    py::class_<balatro::ActionOutcome>(m, "ActionOutcome")
+        .def(py::init<>())
+        .def_readwrite("action", &balatro::ActionOutcome::action)
+        .def_readwrite("valid", &balatro::ActionOutcome::valid)
+        .def_readwrite("predicted_chips", &balatro::ActionOutcome::predicted_chips)
+        .def_readwrite("predicted_hand_type", &balatro::ActionOutcome::predicted_hand_type)
+        .def("__repr__", [](const balatro::ActionOutcome& outcome) {
+            return "<ActionOutcome valid=" + std::string(outcome.valid ? "True" : "False") +
+                   " chips=" + std::to_string(outcome.predicted_chips) + ">";
+        });
+
     // Observation struct with full card visibility
     py::class_<balatro::Observation>(m, "Observation")
         .def(py::init<>())
@@ -23,19 +59,47 @@ PYBIND11_MODULE(_balatro_core, m) {
         .def_readwrite("chips_to_target", &balatro::Observation::chips_to_target)
         .def_readwrite("deck_remaining", &balatro::Observation::deck_remaining)
         .def_readwrite("discard_pile_size", &balatro::Observation::discard_pile_size)
+        .def_readwrite("num_face_cards", &balatro::Observation::num_face_cards)
+        .def_readwrite("num_aces", &balatro::Observation::num_aces)
         // Hand analysis features
         .def_readwrite("has_pair", &balatro::Observation::has_pair)
         .def_readwrite("has_trips", &balatro::Observation::has_trips)
         .def_readwrite("straight_potential", &balatro::Observation::straight_potential)
         .def_readwrite("flush_potential", &balatro::Observation::flush_potential)
+        // Best hand analysis (for RL agents)
+        .def_readwrite("best_hand_type", &balatro::Observation::best_hand_type)
+        .def_readwrite("best_hand_score", &balatro::Observation::best_hand_score)
+        // Complete hand pattern flags
+        .def_readwrite("has_two_pair", &balatro::Observation::has_two_pair)
+        .def_readwrite("has_full_house", &balatro::Observation::has_full_house)
+        .def_readwrite("has_four_of_kind", &balatro::Observation::has_four_of_kind)
+        .def_readwrite("has_straight", &balatro::Observation::has_straight)
+        .def_readwrite("has_flush", &balatro::Observation::has_flush)
+        .def_readwrite("has_straight_flush", &balatro::Observation::has_straight_flush)
         // Card arrays as numpy arrays
         .def_property_readonly("card_ranks",
             [](const balatro::Observation& obs) {
-                return py::array_t<int>(balatro::HAND_SIZE, obs.card_ranks);
+                // Allocate on heap and transfer ownership to Python
+                auto* data = new std::vector<int>(obs.card_ranks, obs.card_ranks + balatro::HAND_SIZE);
+                auto capsule = py::capsule(data, [](void *v) { delete reinterpret_cast<std::vector<int>*>(v); });
+                return py::array_t<int>(
+                    {balatro::HAND_SIZE},  // shape
+                    {sizeof(int)},          // strides
+                    data->data(),           // data pointer
+                    capsule                 // ownership
+                );
             })
         .def_property_readonly("card_suits",
             [](const balatro::Observation& obs) {
-                return py::array_t<int>(balatro::HAND_SIZE, obs.card_suits);
+                // Allocate on heap and transfer ownership to Python
+                auto* data = new std::vector<int>(obs.card_suits, obs.card_suits + balatro::HAND_SIZE);
+                auto capsule = py::capsule(data, [](void *v) { delete reinterpret_cast<std::vector<int>*>(v); });
+                return py::array_t<int>(
+                    {balatro::HAND_SIZE},  // shape
+                    {sizeof(int)},          // strides
+                    data->data(),           // data pointer
+                    capsule                 // ownership
+                );
             })
         .def("__repr__", [](const balatro::Observation& obs) {
             return "<Observation plays=" + std::to_string(obs.plays_left) +
@@ -122,6 +186,14 @@ PYBIND11_MODULE(_balatro_core, m) {
         .def("validate_action", &balatro::Simulator::validate_action,
              py::arg("action"),
              "Validate an action before execution")
+        // RL helper methods
+        .def("get_best_hand", &balatro::Simulator::get_best_hand,
+             "Get the best possible hand from current state")
+        .def("predict_play_score", &balatro::Simulator::predict_play_score,
+             py::arg("card_mask"),
+             "Predict score for a PLAY action without executing it")
+        .def("enumerate_all_actions", &balatro::Simulator::enumerate_all_actions,
+             "Enumerate all valid actions with predicted outcomes")
         .def("__repr__", [](const balatro::Simulator&) {
             return "<Simulator>";
         });

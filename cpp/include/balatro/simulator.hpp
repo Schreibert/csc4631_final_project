@@ -41,6 +41,21 @@ public:
     // Get read-only state view (for debugging/testing)
     const BlindState& state_view() const { return state_; }
 
+    // RL helper methods (delegate to BlindState)
+
+    // Get best possible hand from current state
+    HandEvaluation get_best_hand() const { return state_.get_best_hand(); }
+
+    // Predict score for a PLAY action
+    int predict_play_score(const std::array<bool, HAND_SIZE>& card_mask) const {
+        return state_.predict_play_score(card_mask);
+    }
+
+    // Enumerate all valid actions with predicted outcomes
+    std::vector<ActionOutcome> enumerate_all_actions() const {
+        return state_.enumerate_all_actions();
+    }
+
 private:
     // Execute single action (returns reward)
     int execute_action(const Action& action);

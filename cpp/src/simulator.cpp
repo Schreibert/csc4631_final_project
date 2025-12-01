@@ -71,6 +71,13 @@ ActionValidationResult Simulator::validate_action(const Action& action) const {
         return ActionValidationResult(false, oss.str());
     }
 
+    // If discarding, must select at most 5 cards
+    if (action.type == Action::DISCARD && count > 5) {
+        std::ostringstream oss;
+        oss << "Cannot discard more than 5 cards (selected " << count << ")";
+        return ActionValidationResult(false, oss.str());
+    }
+
     // If playing, must have plays left
     if (action.type == Action::PLAY && state_.get_plays_left() <= 0) {
         return ActionValidationResult(false, "No plays remaining");

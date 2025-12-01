@@ -77,10 +77,10 @@ int calc_rank_sum(const std::vector<Card>& cards) {
 
 HandEvaluation evaluate_hand(const std::vector<Card>& cards) {
     HandEvaluation result;
-    result.cards_used = cards;
-    result.rank_sum = calc_rank_sum(cards);
 
     if (cards.empty() || cards.size() > 5) {
+        result.cards_used = cards;
+        result.rank_sum = 0;
         return result; // Invalid
     }
 
@@ -96,56 +96,133 @@ HandEvaluation evaluate_hand(const std::vector<Card>& cards) {
     bool straight = is_straight(cards);
     bool flush = is_flush(cards);
 
-    // Straight Flush
+    // Straight Flush - all 5 cards score
     if (straight && flush && cards.size() == 5) {
         result.type = HandType::STRAIGHT_FLUSH;
+        result.cards_used = cards;
+        result.rank_sum = calc_rank_sum(cards);
         return result;
     }
 
-    // Four of a Kind
+    // Four of a Kind - only the 4 cards score
     if (counts.size() >= 1 && counts[0] == 4) {
         result.type = HandType::FOUR_OF_A_KIND;
+        // Find the rank that appears 4 times
+        int quad_rank = -1;
+        for (int r = 0; r < NUM_RANKS; ++r) {
+            if (rank_counts[r] == 4) {
+                quad_rank = r;
+                break;
+            }
+        }
+        // Add only the 4 matching cards
+        for (Card c : cards) {
+            if (get_rank(c) == quad_rank) {
+                result.cards_used.push_back(c);
+            }
+        }
+        result.rank_sum = calc_rank_sum(result.cards_used);
         return result;
     }
 
-    // Full House (3 + 2)
+    // Full House (3 + 2) - all 5 cards score
     if (counts.size() >= 2 && counts[0] == 3 && counts[1] == 2) {
         result.type = HandType::FULL_HOUSE;
+        result.cards_used = cards;
+        result.rank_sum = calc_rank_sum(cards);
         return result;
     }
 
-    // Flush
+    // Flush - all 5 cards score
     if (flush && cards.size() == 5) {
         result.type = HandType::FLUSH;
+        result.cards_used = cards;
+        result.rank_sum = calc_rank_sum(cards);
         return result;
     }
 
-    // Straight
+    // Straight - all 5 cards score
     if (straight) {
         result.type = HandType::STRAIGHT;
+        result.cards_used = cards;
+        result.rank_sum = calc_rank_sum(cards);
         return result;
     }
 
-    // Three of a Kind
+    // Three of a Kind - only the 3 cards score
     if (counts.size() >= 1 && counts[0] == 3) {
         result.type = HandType::THREE_OF_A_KIND;
+        // Find the rank that appears 3 times
+        int trips_rank = -1;
+        for (int r = 0; r < NUM_RANKS; ++r) {
+            if (rank_counts[r] == 3) {
+                trips_rank = r;
+                break;
+            }
+        }
+        // Add only the 3 matching cards
+        for (Card c : cards) {
+            if (get_rank(c) == trips_rank) {
+                result.cards_used.push_back(c);
+            }
+        }
+        result.rank_sum = calc_rank_sum(result.cards_used);
         return result;
     }
 
-    // Two Pair
+    // Two Pair - only the 4 cards in the pairs score
     if (counts.size() >= 2 && counts[0] == 2 && counts[1] == 2) {
         result.type = HandType::TWO_PAIR;
+        // Find the two ranks that appear twice
+        std::vector<int> pair_ranks;
+        for (int r = 0; r < NUM_RANKS; ++r) {
+            if (rank_counts[r] == 2) {
+                pair_ranks.push_back(r);
+            }
+        }
+        // Add only the cards in the pairs
+        for (Card c : cards) {
+            int rank = get_rank(c);
+            if (std::find(pair_ranks.begin(), pair_ranks.end(), rank) != pair_ranks.end()) {
+                result.cards_used.push_back(c);
+            }
+        }
+        result.rank_sum = calc_rank_sum(result.cards_used);
         return result;
     }
 
-    // Pair
+    // Pair - only the 2 cards in the pair score
     if (counts.size() >= 1 && counts[0] == 2) {
         result.type = HandType::PAIR;
+        // Find the rank that appears twice
+        int pair_rank = -1;
+        for (int r = 0; r < NUM_RANKS; ++r) {
+            if (rank_counts[r] == 2) {
+                pair_rank = r;
+                break;
+            }
+        }
+        // Add only the 2 matching cards
+        for (Card c : cards) {
+            if (get_rank(c) == pair_rank) {
+                result.cards_used.push_back(c);
+            }
+        }
+        result.rank_sum = calc_rank_sum(result.cards_used);
         return result;
     }
 
-    // High Card
+    // High Card - only the highest card scores
     result.type = HandType::HIGH_CARD;
+    // Find the highest ranked card
+    Card highest = cards[0];
+    for (Card c : cards) {
+        if (get_rank(c) > get_rank(highest)) {
+            highest = c;
+        }
+    }
+    result.cards_used.push_back(highest);
+    result.rank_sum = calc_rank_sum(result.cards_used);
     return result;
 }
 

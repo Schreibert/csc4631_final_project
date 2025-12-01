@@ -2,6 +2,7 @@
 #include "../include/balatro/scoring.hpp"
 #include "../include/balatro/hand_eval.hpp"
 #include <algorithm>
+#include <functional>
 
 namespace balatro {
 
@@ -32,12 +33,33 @@ Observation BlindState::get_observation() const {
     obs.chips_to_target = std::max(0, target_score_ - chips_);
     obs.deck_remaining = deck_.remaining();
     obs.discard_pile_size = 0; // TODO: Add discard pile tracking to Deck class
+    obs.num_face_cards = std::count_if(hand_.begin(), hand_.end(), [](const Card& c) {
+        int rank = get_rank(c);
+        return rank >= 9; // 9, 10, J, Q, K, A
+    });
+    obs.num_aces = std::count_if(hand_.begin(), hand_.end(), [](const Card& c) {
+        return get_rank(c) == 12; // Ace
+    });
 
     // Hand analysis features
     obs.has_pair = has_pair(hand_) ? 1 : 0;
     obs.has_trips = has_three_of_kind(hand_) ? 1 : 0;
     obs.straight_potential = has_straight_potential(hand_) ? 1 : 0;
     obs.flush_potential = has_flush_potential(hand_) ? 1 : 0;
+
+    // Best possible hand analysis (for RL agents)
+    std::vector<Card> hand_vec(hand_.begin(), hand_.end());
+    HandEvaluation best_hand = find_best_hand(hand_vec);
+    obs.best_hand_type = static_cast<int>(best_hand.type);
+    obs.best_hand_score = calculate_score(best_hand);
+
+    // Complete hand pattern flags based on best hand
+    obs.has_two_pair = (best_hand.type == HandType::TWO_PAIR);
+    obs.has_full_house = (best_hand.type == HandType::FULL_HOUSE);
+    obs.has_four_of_kind = (best_hand.type == HandType::FOUR_OF_A_KIND);
+    obs.has_straight = (best_hand.type == HandType::STRAIGHT || best_hand.type == HandType::STRAIGHT_FLUSH);
+    obs.has_flush = (best_hand.type == HandType::FLUSH || best_hand.type == HandType::STRAIGHT_FLUSH);
+    obs.has_straight_flush = (best_hand.type == HandType::STRAIGHT_FLUSH);
 
     // Current hand cards
     for (int i = 0; i < HAND_SIZE; ++i) {
@@ -116,6 +138,11 @@ bool BlindState::is_valid_action(const Action& action) const {
         return false;
     }
 
+    // If discarding, must select at most 5 cards
+    if (action.type == Action::DISCARD && count > 5) {
+        return false;
+    }
+
     // If playing, must have plays left
     if (action.type == Action::PLAY && plays_left_ <= 0) {
         return false;
@@ -158,6 +185,106 @@ void BlindState::check_termination() {
         win_ = false;
         return;
     }
+}
+
+// RL helper methods
+
+HandEvaluation BlindState::get_best_hand() const {
+    std::vector<Card> hand_vec(hand_.begin(), hand_.end());
+    return find_best_hand(hand_vec);
+}
+
+int BlindState::predict_play_score(const std::array<bool, HAND_SIZE>& card_mask) const {
+    // Convert mask to card vector
+    std::vector<Card> cards;
+    for (int i = 0; i < HAND_SIZE; ++i) {
+        if (card_mask[i]) {
+            cards.push_back(hand_[i]);
+        }
+    }
+
+    // Evaluate and score
+    if (cards.empty()) {
+        return 0;
+    }
+
+    auto eval = evaluate_hand(cards);
+    return calculate_score(eval);
+}
+
+std::vector<ActionOutcome> BlindState::enumerate_all_actions() const {
+    std::vector<ActionOutcome> outcomes;
+
+    // Helper lambda to generate all k-element subsets (combinations)
+    auto generate_combinations = [](int n, int k) {
+        std::vector<std::array<bool, HAND_SIZE>> masks;
+        std::array<bool, HAND_SIZE> mask{};
+
+        // Recursive generator using backtracking
+        std::function<void(int, int)> generate = [&](int start, int count) {
+            if (count == k) {
+                masks.push_back(mask);
+                return;
+            }
+            for (int i = start; i <= n - (k - count); ++i) {
+                mask[i] = true;
+                generate(i + 1, count + 1);
+                mask[i] = false;
+            }
+        };
+
+        generate(0, 0);
+        return masks;
+    };
+
+    // Generate all PLAY actions (1-5 cards)
+    if (plays_left_ > 0) {
+        for (int num_cards = 1; num_cards <= std::min(5, HAND_SIZE); ++num_cards) {
+            auto masks = generate_combinations(HAND_SIZE, num_cards);
+            for (const auto& mask : masks) {
+                ActionOutcome outcome;
+                outcome.action = Action(Action::PLAY, mask);
+                outcome.valid = true;
+                outcome.predicted_chips = predict_play_score(mask);
+
+                // Get hand type
+                std::vector<Card> cards;
+                for (int i = 0; i < HAND_SIZE; ++i) {
+                    if (mask[i]) cards.push_back(hand_[i]);
+                }
+                auto eval = evaluate_hand(cards);
+                outcome.predicted_hand_type = static_cast<int>(eval.type);
+
+                outcomes.push_back(outcome);
+            }
+        }
+    }
+
+    // Generate all DISCARD actions (1-8 cards)
+    if (discards_left_ > 0) {
+        for (int num_cards = 1; num_cards <= HAND_SIZE; ++num_cards) {
+            auto masks = generate_combinations(HAND_SIZE, num_cards);
+            for (const auto& mask : masks) {
+                ActionOutcome outcome;
+                outcome.action = Action(Action::DISCARD, mask);
+                outcome.valid = true;
+                outcome.predicted_chips = 0;  // Discarding doesn't score chips
+                outcome.predicted_hand_type = 0;  // Not applicable for discards
+
+                outcomes.push_back(outcome);
+            }
+        }
+    }
+
+    // Sort by predicted chips (descending) for PLAY actions
+    std::sort(outcomes.begin(), outcomes.end(), [](const ActionOutcome& a, const ActionOutcome& b) {
+        if (a.action.type == Action::PLAY && b.action.type == Action::PLAY) {
+            return a.predicted_chips > b.predicted_chips;
+        }
+        return a.action.type < b.action.type;  // PLAYs before DISCARDs
+    });
+
+    return outcomes;
 }
 
 } // namespace balatro
