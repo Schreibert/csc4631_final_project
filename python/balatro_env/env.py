@@ -187,6 +187,16 @@ class BalatroBatchedSimEnv(gym.Env):
         Args:
             action: Dict with 'type' (0=PLAY, 1=DISCARD) and 'card_mask' (bool array)
         """
+        # Capture state BEFORE action for discard shaping
+        obs_before = self._last_obs
+        best_hand_type_before = obs_before.best_hand_type if obs_before else 0
+        flush_potential_before = obs_before.flush_potential if obs_before else 0
+        straight_potential_before = obs_before.straight_potential if obs_before else 0
+        discards_left_before = obs_before.discards_left if obs_before else 0
+
+        # Detect if action is a discard
+        is_discard_action = (action['type'] == 1)
+
         # Convert gym action dict to C++ Action
         cpp_action = core.Action()
         cpp_action.type = core.PLAY if action['type'] == 0 else core.DISCARD
@@ -213,7 +223,13 @@ class BalatroBatchedSimEnv(gym.Env):
             discards_left=result.final_obs.discards_left,
             done=result.done,
             win=result.win,
-            hand_type=None  # We don't have hand type info from C++ yet
+            hand_type=None,  # We don't have hand type info from C++ yet
+            # New discard shaping parameters
+            best_hand_type=result.final_obs.best_hand_type,
+            flush_potential=(flush_potential_before == 1),
+            straight_potential=(straight_potential_before == 1),
+            is_discard_action=is_discard_action,
+            discards_left_before=discards_left_before
         )
 
         terminated = result.done

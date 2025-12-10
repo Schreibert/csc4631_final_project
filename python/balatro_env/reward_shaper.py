@@ -79,6 +79,8 @@ class RewardShaper:
         self.thresholds_crossed = set()
         # Track previous chip count for threshold detection
         self.previous_chips = 0
+        # Track previous best hand type for hand improvement rewards
+        self.previous_best_hand_type = 0
 
     def shape_reward(
         self,
@@ -90,7 +92,13 @@ class RewardShaper:
         discards_left: int,
         done: bool,
         win: bool,
-        hand_type: Optional[str] = None
+        hand_type: Optional[str] = None,
+        # New parameters for discard shaping
+        best_hand_type: int = 0,
+        flush_potential: bool = False,
+        straight_potential: bool = False,
+        is_discard_action: bool = False,
+        discards_left_before: int = 0
     ) -> float:
         """
         Compute shaped reward from game state and raw chip delta.
@@ -101,10 +109,15 @@ class RewardShaper:
             target_score: Target score to beat
             action: Action code taken (0-6)
             plays_left: Remaining plays
-            discards_left: Remaining discards
+            discards_left: Remaining discards (after action)
             done: Whether episode is finished
             win: Whether episode was won
             hand_type: Optional hand type string (e.g., "pair", "flush")
+            best_hand_type: Current best hand type (0=HC, 1=Pair, ..., 8=SF)
+            flush_potential: Whether hand has flush potential
+            straight_potential: Whether hand has straight potential
+            is_discard_action: Whether action was a discard
+            discards_left_before: Discards remaining before action (for penalty calc)
 
         Returns:
             Shaped reward value
@@ -138,7 +151,40 @@ class RewardShaper:
             if progress_fraction < self.config['penalties']['desperate_threshold']:
                 reward -= self.config['penalties']['desperate_play']
 
-        # 6. Terminal rewards (win/loss bonuses)
+        # 6. Discard shaping rewards/penalties
+        discard_cfg = self.config.get('discard_shaping', {})
+        if discard_cfg.get('enabled', False) and not done:
+            # 6a. Smart discard bonus (reward discarding when hand is weak)
+            if is_discard_action:
+                reward += self._compute_discard_bonus(
+                    self.previous_best_hand_type,
+                    flush_potential,
+                    straight_potential,
+                    discard_cfg
+                )
+                # 6b. Hand improvement reward (reward discards that improve hand)
+                reward += self._compute_hand_improvement_reward(
+                    self.previous_best_hand_type,
+                    best_hand_type,
+                    discard_cfg
+                )
+                # 6c. Valuable hand discard penalty (penalize discarding strong hands)
+                valuable_threshold = discard_cfg.get('valuable_hand_threshold', 4)
+                if self.previous_best_hand_type >= valuable_threshold:
+                    reward -= discard_cfg.get('valuable_hand_discard_penalty', 0.0)
+            else:
+                # 6d. Weak hand play penalty (penalize playing weak hands with discards available)
+                reward -= self._compute_weak_play_penalty(
+                    self.previous_best_hand_type,
+                    discards_left_before,
+                    discard_cfg
+                )
+                # 6e. Doomed play penalty (using last play when discards left and can't win)
+                if plays_left == 0 and discards_left_before > 0:
+                    if current_chips < target_score:
+                        reward -= discard_cfg.get('doomed_play_penalty', 0.0)
+
+        # 7. Terminal rewards (win/loss bonuses)
         if done:
             if win:
                 # Win bonus + play conservation bonus
@@ -158,9 +204,15 @@ class RewardShaper:
             else:
                 # Loss penalty
                 reward -= self.config['outcome']['loss_penalty']
+                # Unused discards penalty (penalize wasted discards at loss)
+                discard_cfg = self.config.get('discard_shaping', {})
+                if discard_cfg.get('enabled', False) and discards_left > 0:
+                    unused_penalty = discards_left * discard_cfg.get('unused_discards_penalty', 0.0)
+                    reward -= unused_penalty
 
         # Update tracking state
         self.previous_chips = current_chips
+        self.previous_best_hand_type = best_hand_type
 
         return reward
 
@@ -232,6 +284,95 @@ class RewardShaper:
         # No hand type bonus if we can't determine hand type
         return 0.0
 
+    def _compute_discard_bonus(
+        self,
+        hand_type_before: int,
+        flush_potential: bool,
+        straight_potential: bool,
+        discard_cfg: Dict[str, Any]
+    ) -> float:
+        """
+        Compute bonus for smart discarding.
+
+        Args:
+            hand_type_before: Hand type before discard (0=HC, 1=Pair, etc.)
+            flush_potential: Whether hand has flush potential
+            straight_potential: Whether hand has straight potential
+            discard_cfg: Discard shaping config section
+
+        Returns:
+            Bonus reward for discarding
+        """
+        bonus = 0.0
+        weak_threshold = discard_cfg.get('weak_hand_threshold', 2)
+
+        # Smart discard bonus: reward discarding weak hands
+        if hand_type_before < weak_threshold:
+            bonus += discard_cfg.get('smart_discard_bonus', 0.0)
+
+        # Draw chase bonus: extra reward when chasing flush/straight
+        if flush_potential or straight_potential:
+            bonus += discard_cfg.get('draw_chase_bonus', 0.0)
+
+        return bonus
+
+    def _compute_hand_improvement_reward(
+        self,
+        hand_type_before: int,
+        hand_type_after: int,
+        discard_cfg: Dict[str, Any]
+    ) -> float:
+        """
+        Compute reward for hand improvement after discard.
+
+        Formula: reward = min(n * scale, max_reward)
+        where n = hand_type_after - hand_type_before
+
+        Args:
+            hand_type_before: Hand type before discard
+            hand_type_after: Hand type after discard
+            discard_cfg: Discard shaping config section
+
+        Returns:
+            Improvement reward (0 if hand didn't improve)
+        """
+        improvement = hand_type_after - hand_type_before
+
+        if improvement <= 0:
+            return 0.0
+
+        scale = discard_cfg.get('hand_improvement_scale', 0.1)
+        max_reward = discard_cfg.get('hand_improvement_max', 0.5)
+
+        return min(improvement * scale, max_reward)
+
+    def _compute_weak_play_penalty(
+        self,
+        hand_type: int,
+        discards_left: int,
+        discard_cfg: Dict[str, Any]
+    ) -> float:
+        """
+        Compute penalty for playing weak hands when discards are available.
+
+        Args:
+            hand_type: Current hand type (0=HC, 1=Pair, etc.)
+            discards_left: Number of discards remaining
+            discard_cfg: Discard shaping config section
+
+        Returns:
+            Penalty amount (0 if not applicable)
+        """
+        if discards_left <= 0:
+            return 0.0
+
+        weak_threshold = discard_cfg.get('weak_hand_threshold', 2)
+
+        if hand_type < weak_threshold:
+            return discard_cfg.get('weak_hand_play_penalty', 0.0)
+
+        return 0.0
+
     def get_config_summary(self) -> str:
         """Return a human-readable summary of the reward configuration."""
         lines = [
@@ -277,6 +418,19 @@ def create_legacy_reward_shaper(win_bonus: int, loss_penalty: int, step_penalty:
             'invalid_action': 0,
             'desperate_play': 0,
             'desperate_threshold': 0.5,
+        },
+        'discard_shaping': {
+            'enabled': False,  # Disabled in legacy
+            'smart_discard_bonus': 0,
+            'draw_chase_bonus': 0,
+            'weak_hand_play_penalty': 0,
+            'weak_hand_threshold': 2,
+            'hand_improvement_scale': 0,
+            'hand_improvement_max': 0,
+            'doomed_play_penalty': 0,
+            'valuable_hand_discard_penalty': 0,
+            'valuable_hand_threshold': 4,
+            'unused_discards_penalty': 0,
         },
         'advanced': {
             'safety_margin_bonus': {

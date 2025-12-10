@@ -300,7 +300,7 @@ class AgentVisualizer:
 
         return '\n'.join(lines)
 
-    def visualize_step(self, obs, action, next_obs, reward, info, verbose=True):
+    def visualize_step(self, obs, action, next_obs, reward, info, verbose=True, decision=None):
         """
         Display a single step with full decision context.
 
@@ -311,6 +311,7 @@ class AgentVisualizer:
             reward: Reward received
             info: Info dict with 'raw_reward', 'win', etc.
             verbose: If True, show detailed information
+            decision: Optional agent decision string (e.g., "PLAY -> PLAY_BEST_HAND")
         """
         self.step_count += 1
 
@@ -333,6 +334,8 @@ class AgentVisualizer:
 
         # State before action
         print(f"Resources: {plays_left} plays, {discards_left} discards remaining")
+        if decision:
+            print(f"Decision: {decision}")
         print(f"Progress:  {chips_before}/{target} chips ({chips_before/target*100:.1f}%)")
         print(f"\nHand dealt: {self.format_hand(obs)}")
 
@@ -390,7 +393,7 @@ class AgentVisualizer:
                 print(f"💀 LOSS. Final score: {chips_after}/{target}")
             print(f"{'*'*70}")
 
-    def visualize_step_compact(self, obs, action, next_obs, reward, info):
+    def visualize_step_compact(self, obs, action, next_obs, reward, info, decision=None):
         """
         Display a compact one-line summary of the step.
 
@@ -400,6 +403,7 @@ class AgentVisualizer:
             next_obs: Observation after action
             reward: Reward received
             info: Info dict
+            decision: Optional agent decision string
         """
         self.step_count += 1
 
@@ -418,9 +422,10 @@ class AgentVisualizer:
             status = " [LOSS]"
 
         arrow = "->" if self.use_ascii else "→"
+        decision_str = f" [{decision}]" if decision else ""
         print(f"Step {self.step_count:2d}: {action_type} {selected:30s} {arrow} "
               f"+{chip_gain:4d} chips (total: {chips_after:4d}) | "
-              f"R={reward:6.1f}{status}")
+              f"R={reward:6.1f}{status}{decision_str}")
 
     def print_episode_header(self, episode_num, target_score, seed=None):
         """

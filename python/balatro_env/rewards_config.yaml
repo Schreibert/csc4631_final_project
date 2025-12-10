@@ -46,22 +46,40 @@ hand_quality:
 # Penalties
 # Discourage undesirable behaviors
 penalties:
-  invalid_action: 0.5           # Penalty for attempting illegal moves
-  desperate_play: 0.1           # Penalty for playing High Card when plays_left < 2 and far from target
+  desperate_play: 0.2           # Penalty for playing High Card when plays_left < 2 and far from target
   desperate_threshold: 0.5      # "Far from target" = less than this fraction of target score
+
+# Discard Shaping
+# Reward strategic discarding to encourage the agent to use discards effectively
+discard_shaping:
+  enabled: true
+  smart_discard_bonus: 0.25     # Reward for discarding when hand is weak
+  draw_chase_bonus: 0.15        # Extra bonus when chasing flush/straight draw
+  weak_hand_play_penalty: 0.15  # Penalty for playing weak hand when discards available
+  weak_hand_threshold: 2        # Hand types < this are "weak" (0=HC, 1=Pair, 2=TwoPair)
+  # Hand improvement rewards (after discard)
+  hand_improvement_scale: 0.10  # Reward per hand type level improved
+  hand_improvement_max: 0.50    # Cap on improvement reward (5 levels max)
+  # Doomed play penalty (playing last hand when discards left and can't win)
+  doomed_play_penalty: 0.5      # Penalty for wasting last play when discards unused
+  # Valuable hand discard penalty (discarding strong hands)
+  valuable_hand_discard_penalty: 0.20  # Penalty for discarding Straight or better
+  valuable_hand_threshold: 4    # Hands >= this are "valuable" (4=Straight, 5=Flush, etc.)
+  # Unused discards penalty at episode loss
+  unused_discards_penalty: 1.67 # Penalty per unused discard at loss (~5.0 for 3 discards)
 
 # Advanced Shaping (Optional)
 # These features can be enabled for more sophisticated reward engineering
 advanced:
   # Reward winning with safety margin (beating target by large amount)
   safety_margin_bonus:
-    enabled: false
+    enabled: true
     per_chip_over_target: 0.1   # Bonus per chip over target (e.g., 50 chips over = +5 reward)
     max_bonus: 100              # Cap the maximum safety margin bonus
 
   # Exploration bonuses (encourage trying diverse actions)
   exploration:
-    enabled: false
+    enabled: true
     action_diversity_bonus: 5   # Bonus for using different action types in episode
 
 # Metadata

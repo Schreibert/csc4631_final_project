@@ -2,7 +2,8 @@
 """
 Tabular Q-Learning Agent for Balatro Poker Environment.
 
-Implements classic Q-learning with state discretization and full card mask control.
+Implements classic Q-learning with strategy-based action space.
+Uses 5 high-level strategies instead of 512 card mask combinations.
 """
 
 import sys
@@ -20,24 +21,31 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from balatro_env import BalatroBatchedSimEnv
 from q_learning_utils import (
     save_checkpoint, load_checkpoint, plot_training_curves,
-    compare_to_baseline, print_q_table_stats, create_model_filename,
-    evaluate_random_baseline
+    compare_to_baseline, print_q_table_stats, create_model_filename
 )
+from random_strategy_agent import evaluate_random_strategy_baseline
 from agent_visualizer import AgentVisualizer
+from strategy_action_encoder import StrategyActionEncoder
 
 
 class StateDiscretizer:
     """
-    Improved state discretization using C++ best hand analysis.
+    State discretization with draw indicators for hand improvement potential.
 
-    Replaces 14 manual features with 6 compact features using direct C++ evaluation.
-    Reduces state space from ~300M to ~13K while improving representational power.
+    Uses 8 compact features with specific draw indicators to help the model
+    learn when discarding is worthwhile.
 
-    OLD (14 features): plays, discards, chips, deck, face_cards, aces, has_pair,
-                       has_trips, straight_pot, flush_pot, low, mid, high, max_suit
-    NEW (6 features): plays, discards, chips, best_hand_type, can_win, urgency
+    Features (8 total):
+    1. plays_left (0-4) - resource tracking
+    2. discards_left (0-3) - resource tracking
+    3. chips_bucket (0-11) - progress tracking
+    4. best_hand_type (0-8) - current hand strength
+    5. can_win_this_play (0-1) - can we win with current hand?
+    6. flush_draw (0-1) - has 4+ cards same suit (not already flush)
+    7. straight_draw (0-2) - 0=none, 1=gutshot, 2=open-ended
+    8. upgrade_potential (0-2) - room for improvement based on hand type
 
-    State space: 5 × 4 × 12 × 9 × 2 × 3 = 12,960 theoretical states
+    State space: 5 × 4 × 12 × 9 × 2 × 2 × 3 × 3 = 38,880 theoretical states
     """
 
     def __init__(self, config: Dict[str, Any], target_score: int):
@@ -51,8 +59,6 @@ class StateDiscretizer:
         self.target_score = target_score
 
         # Use finer chips discretization with more granularity near goal
-        # Old: 7 bins [0%, 25%, 50%, 75%, 100%, 150%+]
-        # New: 12 bins with finer resolution near 100%
         self.chips_bins = np.array([
             0.0,   # 0%
             0.20,  # 20%
@@ -67,33 +73,108 @@ class StateDiscretizer:
             1.25   # 125%+ - way past
         ])
 
+    def _has_flush_draw(self, obs: Dict) -> int:
+        """
+        Check if we have a flush draw (4+ cards same suit, not already flush).
+
+        Returns:
+            0 = No flush draw or already have flush
+            1 = Has flush draw (4+ suited cards)
+        """
+        if obs.get('has_flush', False):
+            return 0  # Already have flush, not a "draw"
+        return 1 if obs.get('flush_potential', False) else 0
+
+    def _get_straight_draw_type(self, obs: Dict) -> int:
+        """
+        Determine the type of straight draw.
+
+        Returns:
+            0 = No straight draw or already have straight
+            1 = Gutshot (4 outs, one card needed inside)
+            2 = Open-ended (8 outs, can complete on either end)
+        """
+        if obs.get('has_straight', False):
+            return 0  # Already have straight
+
+        # Get unique sorted ranks
+        ranks = sorted(set(obs['card_ranks']))
+
+        if len(ranks) < 4:
+            return 0  # Not enough unique ranks
+
+        # Check for open-ended: 4 consecutive ranks
+        for i in range(len(ranks) - 3):
+            if ranks[i+3] - ranks[i] == 3:  # 4 consecutive
+                # Open-ended if not at edges (can complete on both ends)
+                # Not open-ended: A-2-3-4 (can only get 5) or J-Q-K-A (can only get 10)
+                if ranks[i] > 0 and ranks[i+3] < 12:
+                    return 2  # Open-ended straight draw
+
+        # Check for gutshot: 4 cards with one gap
+        for i in range(len(ranks) - 3):
+            span = ranks[i+3] - ranks[i]
+            if span == 4:  # One gap in 4 cards
+                # Verify it's actually a gutshot (3 consecutive + 1 gap)
+                gaps = [ranks[j+1] - ranks[j] for j in range(i, i+3)]
+                if gaps.count(2) == 1 and gaps.count(1) == 2:
+                    return 1  # Gutshot straight draw
+
+        return 0  # No straight draw
+
+    def _get_upgrade_potential(self, obs: Dict) -> int:
+        """
+        Determine upgrade potential based on current hand type.
+
+        Returns:
+            0 = Low potential (already strong: FLUSH, FULL_HOUSE, FOUR_OF_A_KIND, STRAIGHT_FLUSH)
+            1 = Medium potential (decent hand: PAIR, TWO_PAIR, STRAIGHT)
+            2 = High potential (weak/upgradeable: HIGH_CARD, THREE_OF_A_KIND)
+
+        Note: THREE_OF_A_KIND is marked high because trips can become:
+        - Full house (drawing to any pair)
+        - Four of a kind (drawing to the remaining card)
+        """
+        hand_type = obs['best_hand_type']
+
+        # Hand types: 0=HIGH_CARD, 1=PAIR, 2=TWO_PAIR, 3=THREE_OF_A_KIND,
+        # 4=STRAIGHT, 5=FLUSH, 6=FULL_HOUSE, 7=FOUR_OF_A_KIND, 8=STRAIGHT_FLUSH
+        if hand_type >= 5:  # FLUSH or better
+            return 0  # Low - already strong
+        elif hand_type in [1, 2, 4]:  # PAIR, TWO_PAIR, STRAIGHT
+            return 1  # Medium - decent but could improve
+        else:  # HIGH_CARD (0) or THREE_OF_A_KIND (3)
+            return 2  # High - significant improvement possible
+
     def discretize(self, obs: Dict) -> Tuple:
         """
-        Convert observation to compact discrete state using C++ features.
+        Convert observation to discrete state with draw indicators.
 
-        Returns 6-feature state:
+        Returns 8-feature state:
         1. plays_left (0-4) - resource tracking
         2. discards_left (0-3) - resource tracking
-        3. chips_bucket (0-11) - finer progress tracking
+        3. chips_bucket (0-11) - progress tracking
         4. best_hand_type (0-8) - C++ evaluated hand strength
-        5. can_win_this_play (0-1) - estimated win probability
-        6. urgency_level (0-2) - strategic context
+        5. can_win_this_play (0-1) - can we win now?
+        6. flush_draw (0-1) - has flush draw?
+        7. straight_draw (0-2) - type of straight draw
+        8. upgrade_potential (0-2) - room for improvement
 
         Args:
             obs: Observation dictionary with C++ enhanced fields
 
         Returns:
-            Hashable 6-element tuple representing discrete state
+            Hashable 8-element tuple representing discrete state
         """
         plays_left = obs['plays_left']
         discards_left = obs['discards_left']
 
-        # Finer chips discretization
+        # Chips discretization
         chips = obs['chips'][0]
         chips_progress = chips / self.target_score
         chips_bucket = np.digitize(chips_progress, self.chips_bins)
 
-        # Use C++ best hand type directly (no manual estimation!)
+        # Use C++ best hand type directly
         best_hand_type = obs['best_hand_type']  # 0-8 from C++
 
         # Can win estimate using C++ best_hand_score
@@ -101,13 +182,10 @@ class StateDiscretizer:
         chips_needed = self.target_score - chips
         can_win_this_play = int(best_hand_score >= chips_needed)
 
-        # Urgency level for strategic context
-        if plays_left >= 2 or chips_progress >= 0.85:
-            urgency = 0  # Safe - multiple plays or close to winning
-        elif plays_left == 1 and chips_progress >= 0.60:
-            urgency = 1  # Risky - last play, might make it
-        else:
-            urgency = 2  # Desperate - last play, far from goal
+        # NEW: Draw indicators
+        flush_draw = self._has_flush_draw(obs)
+        straight_draw = self._get_straight_draw_type(obs)
+        upgrade_potential = self._get_upgrade_potential(obs)
 
         state = (
             plays_left,
@@ -115,92 +193,35 @@ class StateDiscretizer:
             chips_bucket,
             best_hand_type,
             can_win_this_play,
-            urgency
+            flush_draw,
+            straight_draw,
+            upgrade_potential
         )
 
         return state
 
 
-class ActionEncoder:
-    """
-    Encodes/decodes actions between dict format and integer indices.
-
-    Maps (action_type, card_mask) to unique integer for Q-table indexing.
-    """
-
-    def __init__(self):
-        """Initialize action encoder."""
-        self.num_masks = 256  # 2^8 possible card masks
-
-    def encode(self, action: Dict) -> int:
-        """
-        Encode action dict to integer index.
-
-        Args:
-            action: Action dict with 'type' and 'card_mask'
-
-        Returns:
-            Integer action index (0-511)
-        """
-        action_type = action['type']  # 0=PLAY, 1=DISCARD
-        card_mask = action['card_mask']
-
-        # Convert card mask to integer (0-255)
-        mask_int = 0
-        for i, bit in enumerate(card_mask):
-            if bit:
-                mask_int |= (1 << i)
-
-        # Encode as: type * 256 + mask
-        action_idx = action_type * self.num_masks + mask_int
-
-        return action_idx
-
-    def decode(self, action_idx: int) -> Dict:
-        """
-        Decode integer index to action dict.
-
-        Args:
-            action_idx: Integer action index (0-511)
-
-        Returns:
-            Action dict with 'type' and 'card_mask'
-        """
-        action_type = action_idx // self.num_masks
-        mask_int = action_idx % self.num_masks
-
-        # Convert integer to card mask
-        card_mask = np.zeros(8, dtype=np.int8)
-        for i in range(8):
-            if mask_int & (1 << i):
-                card_mask[i] = 1
-
-        action = {
-            'type': action_type,
-            'card_mask': card_mask
-        }
-
-        return action
-
-    def get_all_action_indices(self) -> List[int]:
-        """
-        Get list of all possible action indices.
-
-        Returns:
-            List of integers from 0 to 511
-        """
-        return list(range(2 * self.num_masks))
+# ActionEncoder class replaced by StrategyActionEncoder (imported above)
+# Old action space: 512 card mask combinations
+# New action space: 5 strategic actions (PLAY_BEST_HAND, DISCARD_UPGRADE, etc.)
 
 
 class QLearningAgent:
     """
-    Tabular Q-Learning agent with epsilon-greedy exploration.
+    Tabular Q-Learning agent with strategy-based action space.
+
+    Uses 5 high-level strategies instead of 512 card mask combinations:
+    - 0: PLAY_BEST_HAND
+    - 1: DISCARD_UPGRADE
+    - 2: DISCARD_FLUSH_CHASE
+    - 3: DISCARD_STRAIGHT_CHASE
+    - 4: DISCARD_AGGRESSIVE
     """
 
     def __init__(
         self,
+        env: BalatroBatchedSimEnv,
         state_discretizer: StateDiscretizer,
-        action_encoder: ActionEncoder,
         learning_rate: float = 0.1,
         discount_factor: float = 0.95,
         epsilon_start: float = 1.0,
@@ -209,11 +230,11 @@ class QLearningAgent:
         default_q_value: float = 0.0
     ):
         """
-        Initialize Q-learning agent.
+        Initialize Q-learning agent with strategy-based actions.
 
         Args:
+            env: Environment instance (needed for strategy encoder)
             state_discretizer: State discretization object
-            action_encoder: Action encoding object
             learning_rate: Learning rate (alpha)
             discount_factor: Discount factor (gamma)
             epsilon_start: Initial exploration rate
@@ -221,8 +242,9 @@ class QLearningAgent:
             epsilon_decay: Epsilon decay per episode
             default_q_value: Default Q-value for unseen state-action pairs
         """
+        self.env = env
         self.state_discretizer = state_discretizer
-        self.action_encoder = action_encoder
+        self.action_encoder = StrategyActionEncoder(env)
 
         self.alpha = learning_rate
         self.gamma = discount_factor
@@ -231,9 +253,12 @@ class QLearningAgent:
         self.epsilon_decay = epsilon_decay
         self.default_q = default_q_value
 
-        # Q-table: Q[state][action_idx] = q_value
-        # Use defaultdict for sparse representation
+        # Q-table: Q[state][strategy_idx] = q_value
+        # Now only 5 actions per state instead of 512!
         self.q_table = defaultdict(lambda: defaultdict(lambda: self.default_q))
+
+        # Track last chosen strategy for update
+        self._last_strategy_idx = None
 
         # Statistics
         self.total_updates = 0
@@ -246,68 +271,37 @@ class QLearningAgent:
         """Set Q-value for state-action pair."""
         self.q_table[state][action_idx] = value
 
-    def get_max_q_value(self, state: Tuple) -> float:
-        """Get maximum Q-value for state across all actions."""
+    def get_max_q_value(self, state: Tuple, obs: Dict) -> float:
+        """Get maximum Q-value for state across valid actions."""
+        valid_actions = self.get_valid_action_indices(obs)
+
         if state not in self.q_table or not self.q_table[state]:
             return self.default_q
 
-        return max(self.q_table[state].values())
+        # Only consider valid actions
+        valid_q_values = [self.q_table[state].get(a, self.default_q) for a in valid_actions]
+        return max(valid_q_values) if valid_q_values else self.default_q
 
     def get_valid_action_indices(self, obs: Dict) -> List[int]:
         """
-        Get list of valid action indices for current observation.
-
-        Filters out invalid actions (e.g., 0 cards selected, wrong number of cards).
-
-        Args:
-            obs: Current observation
+        Get list of valid strategy action indices for current observation.
 
         Returns:
-            List of valid action indices
+            List of valid action indices (0-4)
         """
-        valid_actions = []
-        plays_left = obs['plays_left']
-        discards_left = obs['discards_left']
-
-        # Check all possible actions
-        for action_idx in range(512):  # 2 action types * 256 masks
-            action = self.action_encoder.decode(action_idx)
-            action_type = action['type']
-            card_mask = action['card_mask']
-            num_cards = np.sum(card_mask)
-
-            # Must select at least 1 card
-            if num_cards == 0:
-                continue
-
-            # Check action type validity
-            if action_type == 0:  # PLAY
-                # Must have plays left and select 1-5 cards
-                if plays_left > 0 and 1 <= num_cards <= 5:
-                    valid_actions.append(action_idx)
-            else:  # DISCARD (type == 1)
-                # Must have discards left and select 1-5 cards
-                if discards_left > 0 and 1 <= num_cards <= 5:
-                    valid_actions.append(action_idx)
-
-        # If no valid actions found (shouldn't happen), return all actions as fallback
-        if not valid_actions:
-            return list(range(512))
-
-        return valid_actions
+        return self.action_encoder.get_valid_actions(obs)
 
     def get_best_action(self, state: Tuple, obs: Dict) -> int:
         """
-        Get action with highest Q-value for state (exploitation).
+        Get strategy action with highest Q-value for state (exploitation).
 
         Args:
             state: Discretized state tuple
             obs: Raw observation (for action filtering)
 
         Returns:
-            Best valid action index
+            Best valid strategy index (0-4)
         """
-        # Get valid actions for current observation
         valid_actions = self.get_valid_action_indices(obs)
 
         if state not in self.q_table or not self.q_table[state]:
@@ -315,10 +309,10 @@ class QLearningAgent:
             return np.random.choice(valid_actions)
 
         # Filter Q-values to only include valid actions
-        valid_q_values = {a: q for a, q in self.q_table[state].items() if a in valid_actions}
+        valid_q_values = {a: self.q_table[state].get(a, self.default_q)
+                         for a in valid_actions}
 
         if not valid_q_values:
-            # No Q-values for valid actions, return random valid action
             return np.random.choice(valid_actions)
 
         # Return valid action with max Q-value
@@ -326,32 +320,37 @@ class QLearningAgent:
 
     def choose_action(self, obs: Dict, explore: bool = True) -> Dict:
         """
-        Choose action using epsilon-greedy policy with action filtering.
+        Choose action using epsilon-greedy policy over strategies.
 
         Args:
             obs: Observation from environment
             explore: Whether to use epsilon-greedy (False for evaluation)
 
         Returns:
-            Action dict
+            Action dict with 'type' and 'card_mask'
         """
         state = self.state_discretizer.discretize(obs)
-
-        # Get valid actions for current observation
         valid_actions = self.get_valid_action_indices(obs)
 
-        # Epsilon-greedy
+        # Epsilon-greedy over strategy indices
         if explore and np.random.random() < self.epsilon:
-            # Explore: random valid action
-            action_idx = np.random.choice(valid_actions)
+            strategy_idx = np.random.choice(valid_actions)
         else:
-            # Exploit: best valid action
-            action_idx = self.get_best_action(state, obs)
+            strategy_idx = self.get_best_action(state, obs)
 
-        # Decode action index to dict
-        action = self.action_encoder.decode(action_idx)
+        # Store for update
+        self._last_strategy_idx = strategy_idx
+
+        # Convert strategy to environment action
+        action = self.action_encoder.decode_to_env_action(strategy_idx, obs)
 
         return action
+
+    def get_last_strategy_name(self) -> str:
+        """Get name of last chosen strategy for logging."""
+        if self._last_strategy_idx is not None:
+            return self.action_encoder.get_action_name(self._last_strategy_idx)
+        return "UNKNOWN"
 
     def update(self, obs: Dict, action: Dict, reward: float, next_obs: Dict, done: bool):
         """
@@ -361,28 +360,31 @@ class QLearningAgent:
 
         Args:
             obs: Current observation
-            action: Action taken
+            action: Action taken (not used - we use stored strategy_idx)
             reward: Reward received
             next_obs: Next observation
             done: Whether episode ended
         """
         state = self.state_discretizer.discretize(obs)
-        action_idx = self.action_encoder.encode(action)
+        strategy_idx = self._last_strategy_idx
         next_state = self.state_discretizer.discretize(next_obs)
 
+        if strategy_idx is None:
+            return  # No action was taken
+
         # Current Q-value
-        current_q = self.get_q_value(state, action_idx)
+        current_q = self.get_q_value(state, strategy_idx)
 
         # Target Q-value
         if done:
             target_q = reward  # No future rewards
         else:
-            max_next_q = self.get_max_q_value(next_state)
+            max_next_q = self.get_max_q_value(next_state, next_obs)
             target_q = reward + self.gamma * max_next_q
 
         # Q-learning update
         new_q = current_q + self.alpha * (target_q - current_q)
-        self.set_q_value(state, action_idx, new_q)
+        self.set_q_value(state, strategy_idx, new_q)
 
         self.total_updates += 1
 
@@ -424,14 +426,14 @@ def train(
         'epsilons': []
     }
 
-    # Evaluate random baseline once
+    # Evaluate random strategy baseline once (same action space for fair comparison)
     if config['baseline']['compare_to_random'] and start_episode == 0:
-        print("\nEvaluating random baseline...")
+        print("\nEvaluating random strategy baseline (same action space)...")
         baseline_episodes = config['baseline']['random_episodes']
-        baseline_win_rate, baseline_avg_reward = evaluate_random_baseline(
+        baseline_win_rate, baseline_avg_reward = evaluate_random_strategy_baseline(
             env, baseline_episodes, seed=42
         )
-        print(f"Random Baseline: Win Rate = {baseline_win_rate:.1%}, "
+        print(f"Random Strategy Baseline: Win Rate = {baseline_win_rate:.1%}, "
               f"Avg Reward = {baseline_avg_reward:.1f}")
 
     print(f"\nStarting training from episode {start_episode}...")
@@ -703,12 +705,11 @@ def main():
         reward_config_path=reward_config
     )
 
-    # Create state discretizer and action encoder
+    # Create state discretizer (action encoder is created inside agent)
     state_discretizer = StateDiscretizer(
         config['state_discretization'],
         target_score
     )
-    action_encoder = ActionEncoder()
 
     # Create or load agent
     if args.load_model:
@@ -721,8 +722,8 @@ def main():
             q_table[state] = defaultdict(lambda: config['q_table']['default_value'], actions)
 
         agent = QLearningAgent(
+            env,
             state_discretizer,
-            action_encoder,
             learning_rate=config['learning']['alpha'],
             discount_factor=config['learning']['gamma'],
             epsilon_start=metadata.get('epsilon', config['learning']['epsilon_start']),
@@ -736,8 +737,8 @@ def main():
         start_episode = metadata.get('episode', 0)
     else:
         agent = QLearningAgent(
+            env,
             state_discretizer,
-            action_encoder,
             learning_rate=config['learning']['alpha'],
             discount_factor=config['learning']['gamma'],
             epsilon_start=config['learning']['epsilon_start'],
@@ -749,9 +750,13 @@ def main():
 
     print("=" * 60)
     print("Q-LEARNING AGENT FOR BALATRO POKER")
+    print("(Strategy-Based Action Space)")
     print("=" * 60)
     print(f"Mode: {args.mode.upper()}")
     print(f"Target Score: {target_score}")
+    print(f"Action Space: {agent.action_encoder.NUM_ACTIONS} strategies")
+    print(f"  - PLAY_BEST_HAND, DISCARD_UPGRADE, DISCARD_FLUSH_CHASE,")
+    print(f"    DISCARD_STRAIGHT_CHASE, DISCARD_AGGRESSIVE")
     print(f"Learning Rate: {agent.alpha}")
     print(f"Discount Factor: {agent.gamma}")
     print(f"Epsilon: {agent.epsilon:.3f}")
@@ -762,13 +767,13 @@ def main():
         # Train agent
         train_stats = train(agent, env, config, start_episode)
 
-        # Compare to baseline
+        # Compare to strategy baseline (fair comparison with same action space)
         if config['baseline']['compare_to_random']:
             print("\nFinal Evaluation...")
             final_win_rate, final_avg_reward = evaluate(
                 agent, env, config['baseline']['random_episodes'], seed=99999
             )
-            baseline_win_rate, baseline_avg_reward = evaluate_random_baseline(
+            baseline_win_rate, baseline_avg_reward = evaluate_random_strategy_baseline(
                 env, config['baseline']['random_episodes'], seed=42
             )
             compare_to_baseline(
@@ -810,9 +815,9 @@ def main():
             print(f"  Win Rate:   {win_rate:5.1%}")
             print(f"  Avg Reward: {avg_reward:7.1f}")
 
-        # Compare to baseline
+        # Compare to strategy baseline (fair comparison with same action space)
         if config['baseline']['compare_to_random'] and not visualize:
-            baseline_win_rate, baseline_avg_reward = evaluate_random_baseline(
+            baseline_win_rate, baseline_avg_reward = evaluate_random_strategy_baseline(
                 env, num_eval_episodes, seed=42
             )
             compare_to_baseline(
