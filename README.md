@@ -1,146 +1,207 @@
-# Balatro Poker Simulator for Reinforcement Learning
+# Balatro RL Simulator
 
-A high-performance C++ poker game simulator with Python bindings, designed for reinforcement learning research. Implements a simplified single-blind version of Balatro-style poker.
+## Contributors
+- **Tyler Schreiber**
+- **Alec Nartatez**
 
 ## Project Overview
 
-This simulator provides:
-- **C++ core** with deterministic gameplay
-- **Python bindings** via pybind11 for easy RL integration
-- **Deterministic replay** for reproducible experiments
+This project implements a high-performance Balatro simulator designed for reinforcement learning research. The simulator features a two-layer architecture: a C++ core providing fast game logic, and a Python wrapper for RL work.
 
-## Architecture
+The goal is to train RL agents to play a simplified single-blind balatro where agents must score chips by playing poker hands from an 8-card hand. Agents have 4 plays and 3 discards per episode to reach a target score (default 300 chips). The scoring formula follows Balatro's system: `(base chips + card score) × base mult`.
 
-```
-cpp/                   - C++ simulation core
-├── include/balatro/   - Public API headers
-├── src/               - Core implementation
-└── tests/             - C++ unit tests (41 tests, all passing)
+---
 
-bindings/              - pybind11 Python bindings
-python/                - Python package
-├── balatro_env/       - Main package
-│   ├── env.py         - Gymnasium environment wrapper
-│   └── _balatro_core  - Compiled C++ module
-├── examples/          - Example scripts
-└── tests/             - Python integration tests
-
-tools/                 - Utilities
-└── seed_replay/       - Determinism validation tool
-```
-
-## Building from Source
+## Compilation Instructions
 
 ### Prerequisites
-
 - CMake 3.14+
-- C++17 compiler (MSVC, GCC, or Clang)
+- C++17 compiler (MSVC 2022, GCC 7+, or Clang 6+)
 - Python 3.8+
-- Git
 
-### Build Steps
+### Building C++
 
-1. **Clone and navigate to project**
 ```bash
-cd csc4631_final_project
-```
-
-2. **Build C++ core and bindings**
-```bash
-# Windows
+# From project root
 cmake -S . -B build -G "Visual Studio 17 2022" -A x64
 cmake --build build --config Release --target _balatro_core
-
-# Linux/Mac
-mkdir -p build && cd build
-cmake .. -DBUILD_TESTS=ON -DBUILD_PYTHON_BINDINGS=ON
-cmake --build . --config Release
 ```
 
-The Python module (`.pyd` or `.so`) is **automatically copied** to `python/balatro_env/`
+The compiled Python module (`_balatro_core.pyd` on Windows) is automatically copied to `python/balatro_env/` after building.
 
-3. **Run tests**
+### Installing Python Package
+
 ```bash
-# C++ tests (41 tests)
-cd build\cpp\tests
-ctest -C Release
-
-# Python tests (7 tests)
-cd python && python tests/test_determinism.py
+cd python
+pip install -r requirements.txt
 ```
 
-## Game Rules (v0 Simplified Ruleset)
+---
 
-### Episode Structure
-- **Objective:** Score ≥ target_score chips before exhausting plays
-- **Resources:** 4 plays, 3 discards per episode
-- **Hand Size:** Always 8 cards
-- **Deck:** Standard 52-card deck
+## Running the Code
 
-### Scoring Formula
-```
-score = (base_chips + rank_sum) × base_mult
+### Running C++ Tests
+
+```bash
+# From project root (Windows)
+ctest --test-dir build/cpp/tests -C Release --verbose
 ```
 
-Example: Full House K♣K♦K♥A♠A♣
-- Base chips: 40
-- Rank sum: 10+10+10+11+11 = 52
-- Base multiplier: 4
-- **Total: (40 + 52) × 4 = 368 chips**
+### Running Python Tests
 
-### Poker Hands (Base Values)
+```bash
+cd python
+python -m pytest tests/ -v
+```
 
-| Hand | Base Chips | Base Mult |
-|------|-----------|-----------|
-| High Card | 5 | 1 |
-| Pair | 10 | 2 |
-| Two Pair | 20 | 2 |
-| Three of a Kind | 30 | 3 |
-| Straight | 30 | 4 |
-| Flush | 35 | 4 |
-| Full House | 40 | 4 |
-| Four of a Kind | 60 | 7 |
-| Straight Flush | 100 | 8 |
+---
 
-### Observation Space (8-dimensional)
+## Running the Agents
 
-1. `plays_left` (0-4)
-2. `discards_left` (0-3)
-3. `chips_to_target` (0-∞)
-4. `has_pair` (0/1)
-5. `has_trips` (0/1)
-6. `straight_potential` (0/1)
-7. `flush_potential` (0/1)
-8. `max_rank_bucket` (0-5)
+All agents are located in `python/examples/`. Run from that directory or use full paths.
 
-## Test Coverage
+### Random Strategy Agent
 
-### C++ Tests (41 passing)
-- Card encoding and deck shuffling
-- Hand evaluation (all 9 poker hands)
-- Golden scoring tests
-- State management
-- Deterministic trajectories
-- Episode termination
-- Batch vs sequential equivalence
+Baseline agent that randomly selects from 5 high-level strategies.
 
-### Python Tests (7 passing)
-- Deterministic reset
-- Deterministic trajectory
-- Batch vs sequential equivalence
-- Observation size validation
-- Action space validation
-- Episode termination (win/loss)
-- Padding after done
+```bash
+cd python/examples
 
-## Limitations (v0)
+# Run 100 episodes with default settings
+python random_strategy_agent.py
+```
 
-The following Balatro features are **not** implemented in v0:
-- Jokers and their effects
-- Card editions (Foil, Holographic, etc.)
-- Tags and skip blind mechanics
-- Shop phases and economy
-- Multi-blind progression (Antes 1-8)
-- Consumables (Tarot/Planet/Spectral cards)
+**Arguments:**
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--mode` | `run` | `run` for batch stats, `eval` for visualized single episode |
+| `--episodes` | `100` | Number of episodes to run |
+| `--seed` | `42` | Starting random seed |
+| `--target-score` | `300` | Chips needed to win |
+| `--visualize` | off | Show card-level decision details |
+| `--viz-mode` | `full` | `full` for detailed view, `compact` for one-line summaries |
+| `--verbose` | off | Print raw state information |
+| `--reward-config` | default | Path to custom reward YAML file |
 
-These may be added in future versions after RL research phase.
+---
+
+### Basic Heuristic Agent
+
+Rule-based agent using greedy play with intelligent discard decisions.
+
+```bash
+cd python/examples
+
+# Run 100 episodes with default settings
+python basic_heuristic.py
+```
+
+**Arguments:**
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--mode` | `run` | `run` for batch stats, `eval` for visualized evaluation |
+| `--episodes` | `100` | Number of episodes to run |
+| `--seed` | `42` | Starting random seed |
+| `--target-score` | `300` | Chips needed to win |
+| `--visualize` | off | Show card-level decision details |
+| `--viz-mode` | `full` | `full` for detailed view, `compact` for one-line summaries |
+| `--verbose` | off | Print raw state information |
+| `--reward-config` | default | Path to custom reward YAML file |
+
+**Typical Performance:** ~65-75% win rate at target=300
+
+---
+
+### Hierarchical Q-Learning Agent
+
+Two-level Q-learning agent that learns when to play vs discard, then which strategy to use.
+
+```bash
+cd python/examples
+
+# Train for default episodes (from config)
+python hierarchical_q_learning_agent.py --mode train
+
+# Evaluate a trained model
+python hierarchical_q_learning_agent.py --mode eval --load-model ../models/hql_final.pkl
+```
+
+**Arguments:**
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--mode` | `train` | `train` to learn, `eval` to test |
+| `--config` | `q_learning_config.yaml` | Path to hyperparameter config file |
+| `--load-model` | none | Path to saved Q-table checkpoint |
+| `--episodes` | from config | Override number of episodes |
+| `--lr` | from config | Override learning rate |
+| `--epsilon-start` | from config | Override initial exploration rate |
+| `--seed` | `42` | Random seed for reproducibility |
+| `--target-score` | `300` | Chips needed to win |
+| `--plot` | off | Show training curves after completion |
+| `--visualize` | off | Show card-level decision details |
+| `--viz-mode` | `full` | `full` for detailed view, `compact` for one-line summaries |
+---
+
+## Results and Outputs
+
+| Output Type | Location |
+|-------------|----------|
+| Trained Q-tables | `models/*.pkl` |
+| Training curves | Displayed via matplotlib (use `--plot`) |
+| Episode statistics | Console output (win rate, avg reward, avg steps) |
+| Decision visualization | Console output (use `--visualize`) |
+
+---
+
+## Directory Structure
+
+```
+.
+├── CMakeLists.txt              - Root CMake configuration
+├── CLAUDE.md                   - Development guidelines for Claude Code
+├── README.md                   - Project documentation
+├── SUMMARY.md                  - This file
+│
+├── cpp/                        - C++ simulation core (C++17)
+│   ├── CMakeLists.txt          - Build configuration for core library
+│   ├── include/balatro/        - Public API headers
+│   │   ├── card.hpp            - Card encoding (0-51), Deck class
+│   │   ├── hand_eval.hpp       - Poker hand evaluation, HandType enum
+│   │   ├── scoring.hpp         - Balatro scoring formula
+│   │   ├── blind_state.hpp     - Episode state, Observation/Action structs
+│   │   └── simulator.hpp       - Top-level simulator for Python bindings
+│   ├── src/                    - Core implementation
+│   │   ├── card.cpp            - Deck management, card dealing
+│   │   ├── hand_eval.cpp       - Hand evaluation with straight/flush detection
+│   │   ├── scoring.cpp         - Score calculation with base values
+│   │   ├── blind_state.cpp     - Game loop, action validation, RL helpers
+│   │   └── simulator.cpp       - Batch action execution
+│   └── tests/                  - Google Test unit tests (45 tests, all passing)
+│
+├── bindings/                   - pybind11 Python bindings
+│   ├── CMakeLists.txt          - pybind11 module configuration
+│   └── pybind/bindings.cpp     - Exposes Simulator, Observation, Action classes
+│
+├── python/
+│   ├── balatro_env/            - Gymnasium RL environment
+│   │   ├── __init__.py         - Package exports BalatroBatchedSimEnv
+│   │   ├── env.py              - Main environment with Dict spaces
+│   │   ├── reward_shaper.py    - YAML-configurable reward shaping
+│   │   └── rewards_config.yaml - Default reward configuration
+│   │
+│   ├── examples/               - Agent implementations
+│   │   ├── random_strategy_agent.py        - Random baseline (~10% win rate)
+│   │   ├── basic_heuristic.py              - Rule-based agent (~70% win rate)
+│   │   ├── hierarchical_q_learning_agent.py - Two-level Q-learning
+│   │   ├── strategy_action_encoder.py      - 5 strategies to card masks
+│   │   ├── q_learning_utils.py             - Checkpointing and plotting
+│   │   └── agent_visualizer.py             - Decision visualization
+│   │
+│   └── tests/                  - Python integration tests (23 tests, all passing)
+│       ├── test_enhanced_features.py   - Best hand and score prediction tests
+│       └── test_reward_shaper.py       - Reward configuration tests
+│
+├── models/                     - Saved Q-tables and checkpoints
+├── docs/                       - Project proposal and architecture docs
+└── tools/seed_replay/          - Determinism validation utility
+```
