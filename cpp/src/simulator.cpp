@@ -1,3 +1,22 @@
+/**
+ * @file simulator.cpp
+ * @brief Implementation of top-level simulator for Python bindings.
+ *
+ * Provides the main interface used by pybind11 to expose the simulator
+ * to Python code. Wraps BlindState with batch execution and detailed
+ * error messages for debugging.
+ *
+ * Key operations:
+ *   - reset(): Initialize new episode with deterministic seeding
+ *   - step_batch(): Execute multiple actions efficiently
+ *   - validate_action(): Provide human-readable error messages
+ *
+ * Batch Execution:
+ *   Actions are processed sequentially. If the episode ends (win/loss)
+ *   before all actions are processed, remaining actions receive 0 reward
+ *   and are not executed.
+ */
+
 #include "../include/balatro/simulator.hpp"
 #include <sstream>
 

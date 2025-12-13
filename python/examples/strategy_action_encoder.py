@@ -2,8 +2,51 @@
 """
 Strategy-Based Action Encoder for Balatro Poker Q-Learning.
 
-Replaces direct card mask selection (512 actions) with high-level strategies (5 actions).
-This dramatically reduces Q-table size while encoding meaningful poker decisions.
+This module provides the StrategyActionEncoder class that converts high-level
+poker strategies into concrete card selection actions. Instead of choosing from
+512 possible card combinations (2^8 - illegal states), the agent selects from
+just 5 meaningful strategies, dramatically reducing Q-table size.
+
+Action Space (5 strategies):
+    0: PLAY_BEST_HAND        - Play optimal 5-card hand (always available if plays > 0)
+    1: DISCARD_UPGRADE       - Keep best-hand cards, discard others to try for upgrade
+    2: DISCARD_FLUSH_CHASE   - Chase flush by discarding non-flush-suit cards
+    3: DISCARD_STRAIGHT_CHASE - Chase straight by discarding non-consecutive cards
+    4: DISCARD_AGGRESSIVE    - Discard 5 lowest cards for complete reset
+
+Why Strategy-Based Actions:
+    - Reduces action space from ~512 to 5 (99% reduction)
+    - Encodes domain knowledge (poker strategy) into action design
+    - Each action has clear semantic meaning
+    - Enables effective Q-learning with reasonable exploration
+
+Algorithm Details:
+    - DISCARD_FLUSH_CHASE: Identifies suit with 4+ cards, discards all others
+    - DISCARD_STRAIGHT_CHASE: Finds longest consecutive rank sequence, including
+      A-2-3-4-5 "wheel" detection where Ace acts as low card
+    - DISCARD_UPGRADE: Uses C++ enumerate_all_actions() to find best hand indices
+
+Usage:
+    Command line (prints action summary):
+        python strategy_action_encoder.py
+
+    Programmatic:
+        >>> from balatro_env import BalatroBatchedSimEnv
+        >>> env = BalatroBatchedSimEnv(target_score=300)
+        >>> encoder = StrategyActionEncoder(env)
+        >>>
+        >>> # Get valid actions for current state
+        >>> obs, _ = env.reset(seed=42)
+        >>> valid = encoder.get_valid_actions(obs)
+        >>> print(f"Valid actions: {valid}")  # e.g., [0, 1, 4]
+        >>>
+        >>> # Convert strategy to environment action
+        >>> action = encoder.decode_to_env_action(0, obs)  # PLAY_BEST_HAND
+        >>> print(f"Action type: {'PLAY' if action['type'] == 0 else 'DISCARD'}")
+        >>> print(f"Card mask: {action['card_mask']}")
+
+Contributors:
+    Tyler Schreiber, Alec Nartatez
 """
 
 import numpy as np
@@ -14,12 +57,26 @@ class StrategyActionEncoder:
     """
     Encodes strategy-based actions for Q-table indexing.
 
+    This class bridges the gap between high-level strategy decisions and
+    concrete card selection actions that the environment expects.
+
     Action Space (5 strategies):
-    - 0: PLAY_BEST_HAND - Play optimal 5-card hand
-    - 1: DISCARD_UPGRADE - Keep best-hand cards, discard others to try for upgrade
-    - 2: DISCARD_FLUSH_CHASE - Discard non-flush-suit cards for flush chance
-    - 3: DISCARD_STRAIGHT_CHASE - Discard non-consecutive cards for straight chance
-    - 4: DISCARD_AGGRESSIVE - Discard 5 lowest cards, complete reset
+        0: PLAY_BEST_HAND - Play optimal 5-card hand (uses C++ evaluation)
+        1: DISCARD_UPGRADE - Keep best-hand cards, discard others to upgrade
+        2: DISCARD_FLUSH_CHASE - Discard non-flush-suit cards (requires 4+ same suit)
+        3: DISCARD_STRAIGHT_CHASE - Discard non-consecutive cards (handles wheel)
+        4: DISCARD_AGGRESSIVE - Discard 5 lowest cards, complete hand reset
+
+    Action Validity Rules:
+        - PLAY_BEST_HAND: Valid when plays_left > 0
+        - DISCARD_*: Valid when discards_left > 0
+        - FLUSH_CHASE: Only valid when flush_potential=1 and best_hand_type < FLUSH
+        - STRAIGHT_CHASE: Only valid when straight_potential=1 and best_hand_type < STRAIGHT
+
+    Example:
+        >>> encoder = StrategyActionEncoder(env)
+        >>> valid = encoder.get_valid_actions(obs)
+        >>> action = encoder.decode_to_env_action(valid[0], obs)
     """
 
     NUM_ACTIONS = 5
@@ -276,6 +333,24 @@ class StrategyActionEncoder:
         Discard non-consecutive cards to chase a straight.
 
         Finds the longest consecutive rank sequence and discards others.
+
+        Algorithm:
+            1. Group card indices by rank
+            2. Find longest consecutive sequence using linear scan
+            3. Check for A-2-3-4-5 "wheel" potential:
+               - Ace is rank 12, 2-5 are ranks 0-3
+               - If Ace present and 3+ low cards (2,3,4,5), treat as wheel draw
+            4. Keep one card per rank in best sequence
+            5. Discard all other cards (lowest ranks first, cap at 5)
+
+        Wheel Detection:
+            The A-2-3-4-5 "wheel" straight requires special handling because
+            the Ace (rank 12) wraps around to act as rank 0. We detect this
+            by checking if we have an Ace plus at least 3 cards from ranks 0-3
+            (representing 2, 3, 4, 5).
+
+        Returns:
+            Dict with type=1 (DISCARD) and card_mask marking cards to discard.
         """
         ranks = list(obs['card_ranks'])
 

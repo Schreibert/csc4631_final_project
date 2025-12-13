@@ -1,3 +1,17 @@
+/**
+ * @file card.cpp
+ * @brief Implementation of card utilities and deck management.
+ *
+ * Provides:
+ *   - Rank/suit name conversion for debugging output
+ *   - Deck shuffling using std::mt19937_64 for determinism
+ *   - Card drawing with automatic reshuffle when exhausted
+ *   - Hand dealing and card replacement operations
+ *
+ * Determinism: The Deck class uses explicit seeding to ensure identical
+ * seeds produce identical shuffle sequences across platforms.
+ */
+
 #include "../include/balatro/card.hpp"
 #include <algorithm>
 

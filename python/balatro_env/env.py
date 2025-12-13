@@ -1,4 +1,33 @@
-"""Gymnasium-style environment wrapper for Balatro simulator"""
+"""
+Gymnasium-style environment wrapper for Balatro poker simulator.
+
+This module provides BalatroBatchedSimEnv, a Gymnasium-compatible environment
+that wraps the high-performance C++ Balatro poker simulator for RL training.
+
+Features:
+    - Dict observation space with 22 features including hand analysis
+    - Dict action space with direct card selection (type + 8-card mask)
+    - Configurable reward shaping via YAML or constructor parameters
+    - Batch action execution for efficiency
+    - RL helper methods (best hand, score prediction, action enumeration)
+
+Usage:
+    >>> from balatro_env import BalatroBatchedSimEnv
+    >>> env = BalatroBatchedSimEnv(target_score=300)
+    >>> obs, info = env.reset(seed=42)
+    >>>
+    >>> # Create action: play first 5 cards
+    >>> action = {'type': 0, 'card_mask': [1,1,1,1,1,0,0,0]}
+    >>> obs, reward, done, trunc, info = env.step(action)
+    >>>
+    >>> # Use RL helpers
+    >>> best_hand = env.get_best_hand()
+    >>> valid_actions = env.get_valid_actions_with_scores()
+
+See Also:
+    - rewards_config.yaml: Default reward configuration
+    - reward_shaper.py: RewardShaper class for custom rewards
+"""
 
 import numpy as np
 import gymnasium as gym
@@ -65,6 +94,49 @@ class BalatroBatchedSimEnv(gym.Env):
         reward_config: Optional[Dict[str, Any]] = None,
         reward_config_path: Optional[str] = None
     ):
+        """
+        Initialize Balatro poker environment.
+
+        Args:
+            target_score: Chips needed to win an episode (default: 300).
+                Higher values make episodes harder and longer.
+            win_bonus: Legacy reward bonus for winning (default: 1000).
+                Only used if no reward_config provided.
+            loss_penalty: Legacy penalty for losing (default: 500).
+                Only used if no reward_config provided.
+            step_penalty: Legacy per-action cost (default: 1).
+                Only used if no reward_config provided.
+            seed: Random seed for episode generation. If None, uses
+                random seed. Same seed produces identical episode sequences.
+            reward_config: Dict with reward configuration (overrides YAML).
+                See rewards_config.yaml for expected structure.
+            reward_config_path: Path to custom reward YAML file.
+                If None and reward_config is None, loads default config.
+
+        Notes:
+            Reward configuration priority:
+            1. If reward_config dict is provided, use it directly
+            2. If reward_config_path is provided, load from that file
+            3. If legacy params (win_bonus, etc.) differ from defaults, use legacy mode
+            4. Otherwise, load default rewards_config.yaml
+
+        Example:
+            >>> # Default configuration
+            >>> env = BalatroBatchedSimEnv(target_score=300)
+            >>>
+            >>> # Custom YAML config
+            >>> env = BalatroBatchedSimEnv(
+            ...     target_score=500,
+            ...     reward_config_path='my_rewards.yaml'
+            ... )
+            >>>
+            >>> # Legacy mode (backwards compatible)
+            >>> env = BalatroBatchedSimEnv(
+            ...     target_score=300,
+            ...     win_bonus=100,
+            ...     step_penalty=5
+            ... )
+        """
         super().__init__()
 
         self.target_score = target_score

@@ -1,3 +1,30 @@
+/**
+ * @file hand_eval.cpp
+ * @brief Implementation of poker hand evaluation algorithms.
+ *
+ * Key algorithms:
+ *   - evaluate_hand(): Identifies hand type from 1-5 cards
+ *   - find_best_hand(): Finds optimal 5-card subset from 8 cards
+ *   - Pattern detection helpers for observation features
+ *
+ * Hand Evaluation Algorithm:
+ *   1. Count rank and suit frequencies
+ *   2. Check for flush (all same suit) and straight (5 consecutive)
+ *   3. Match against hand types in descending strength order
+ *   4. Return hand type with scoring cards and rank sum
+ *
+ * Straight Detection:
+ *   - Normal straights: 5 consecutive ranks (e.g., 5-6-7-8-9)
+ *   - Wheel straight: A-2-3-4-5 where Ace acts as low card
+ *   - The wheel check looks for ranks {0,1,2,3,12} = {2,3,4,5,A}
+ *
+ * Scoring Cards:
+ *   - Different hand types score different subsets of played cards
+ *   - Pair: only the 2 paired cards (not kickers)
+ *   - Full House: all 5 cards (3+2)
+ *   - High Card: only the single highest card
+ */
+
 #include "../include/balatro/hand_eval.hpp"
 #include <algorithm>
 #include <functional>

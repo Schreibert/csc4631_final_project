@@ -1,3 +1,25 @@
+/**
+ * @file blind_state.cpp
+ * @brief Implementation of episode state management and RL helpers.
+ *
+ * Implements the core game loop for single-blind Balatro poker:
+ *   - Episode initialization with deterministic deck shuffling
+ *   - Play and discard action execution
+ *   - Win/loss condition checking
+ *   - Observation construction with 24 features
+ *
+ * RL Helper Methods:
+ *   - get_best_hand(): Finds optimal 5-card hand from 8 cards
+ *   - predict_play_score(): Evaluates play action without executing
+ *   - enumerate_all_actions(): Generates ~450-500 valid actions
+ *
+ * Action Enumeration Algorithm:
+ *   - PLAY actions: C(8,1) + C(8,2) + C(8,3) + C(8,4) + C(8,5) = 218 combinations
+ *   - DISCARD actions: C(8,1) + ... + C(8,8) = 255 combinations
+ *   - Total: ~473 actions per state (varies if plays/discards exhausted)
+ *   - Sorted by predicted_chips (descending) for PLAY actions
+ */
+
 #include "../include/balatro/blind_state.hpp"
 #include "../include/balatro/scoring.hpp"
 #include "../include/balatro/hand_eval.hpp"

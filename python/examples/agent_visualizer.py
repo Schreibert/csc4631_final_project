@@ -1,11 +1,61 @@
 #!/usr/bin/env python3
 """
-Agent decision visualization utilities.
+Agent decision visualization utilities for Balatro poker simulator.
 
-Provides tools to display agent decisions including:
-- Hand dealt (cards with ranks and suits)
-- Action chosen (play/discard with selected cards)
-- Result (points scored, hand type)
+Provides the AgentVisualizer class for displaying agent decisions including:
+    - Hand dealt (cards with ranks and suits)
+    - Action chosen (play/discard with selected cards)
+    - Result (points scored, hand type, scoring breakdown)
+    - Episode summaries (win/loss, total chips, steps taken)
+
+Features:
+    - Two visualization modes: 'full' (detailed) and 'compact' (one-line)
+    - Platform-aware: Unicode suit symbols on Linux/Mac, ASCII on Windows
+    - Scoring formula breakdown showing base chips, rank sum, and multiplier
+    - Hand type analysis by reverse-engineering from chip scores
+
+Usage:
+    >>> from balatro_env import BalatroBatchedSimEnv
+    >>> from agent_visualizer import AgentVisualizer
+    >>>
+    >>> env = BalatroBatchedSimEnv(target_score=300)
+    >>> viz = AgentVisualizer()  # Auto-detects Unicode support
+    >>>
+    >>> obs, _ = env.reset(seed=42)
+    >>> viz.reset_episode()
+    >>> viz.print_episode_header(1, 300, seed=42)
+    >>>
+    >>> # Full visualization (detailed breakdown)
+    >>> action = agent.choose_action(obs)
+    >>> next_obs, reward, done, trunc, info = env.step(action)
+    >>> viz.visualize_step(obs, action, next_obs, reward, info)
+    >>>
+    >>> # Compact visualization (one line per step)
+    >>> viz.visualize_step_compact(obs, action, next_obs, reward, info)
+
+Output Modes:
+    Full mode example:
+        ======================================================================
+        STEP 1
+        ======================================================================
+        Resources: 4 plays, 3 discards remaining
+        Progress:  0/300 chips (0.0%)
+
+        Hand dealt: [K♠, K♦, K♥, A♣, A♦, 7♠, 3♦, 2♣]
+        Best possible: Full House (368 chips)
+
+        >>> ACTION: PLAY 5 card(s)
+            Selected: [K♠, K♦, K♥, A♣, A♦]
+
+        <<< RESULT: Full House
+            Base: 40 chips × 4
+            Rank sum: 10+10+10+11+11 = 52
+            Total: (40 + 52) × 4 = 368 chips
+
+        Reward: 1.25 | WIN!
+
+    Compact mode example:
+        Step  1: PLAY [K♠, K♦, K♥, A♣, A♦] -> +368 chips (total: 368) | WIN!
 """
 
 import sys

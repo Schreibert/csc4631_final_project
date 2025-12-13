@@ -1,7 +1,53 @@
 """
 Utility functions for Q-learning agent.
 
-Includes plotting, checkpointing, and baseline comparison.
+This module provides common utilities for training, evaluating, and visualizing
+Q-learning agents in the Balatro poker environment.
+
+Features:
+    - Checkpoint saving/loading (pickle-based Q-table persistence)
+    - Training curve visualization (win rate, reward, epsilon decay)
+    - Baseline comparison (agent vs random performance)
+    - Q-table statistics and diagnostics
+
+File Format:
+    Checkpoints are saved as pickle files containing:
+        {
+            'q_table': Dict[state_hash, Dict[action_idx, q_value]],
+            'metadata': Dict with 'episode', 'epsilon', 'win_rate', etc.
+        }
+
+Usage:
+    Saving checkpoints during training:
+        >>> from q_learning_utils import save_checkpoint, load_checkpoint
+        >>> metadata = {'episode': 1000, 'epsilon': 0.1, 'win_rate': 0.65}
+        >>> save_checkpoint(q_table, metadata, 'models/q_agent_ep001000.pkl')
+
+    Loading and resuming training:
+        >>> q_table, metadata = load_checkpoint('models/q_agent_ep001000.pkl')
+        >>> start_episode = metadata['episode']
+
+    Plotting training progress:
+        >>> from q_learning_utils import plot_training_curves
+        >>> plot_training_curves(
+        ...     episodes=[100, 200, 300],
+        ...     win_rates=[0.2, 0.4, 0.6],
+        ...     avg_rewards=[50, 100, 150],
+        ...     epsilons=[1.0, 0.5, 0.1],
+        ...     save_path='training_curves.png'
+        ... )
+
+    Comparing to baseline:
+        >>> from q_learning_utils import compare_to_baseline
+        >>> compare_to_baseline(
+        ...     agent_win_rate=0.65,
+        ...     agent_avg_reward=150.0,
+        ...     baseline_win_rate=0.10,
+        ...     baseline_avg_reward=50.0
+        ... )
+
+Contributors:
+    Tyler Schreiber, Alec Nartatez
 """
 
 import pickle
@@ -73,12 +119,26 @@ def plot_training_curves(
     """
     Plot training progress curves.
 
+    Generates a 3-panel figure showing:
+        1. Win rate over training (0-100%)
+        2. Average reward over training
+        3. Epsilon (exploration rate) decay
+
     Args:
-        episodes: List of episode numbers
-        win_rates: List of win rates at each evaluation
-        avg_rewards: List of average rewards at each evaluation
-        epsilons: List of epsilon values
-        save_path: Optional path to save plot
+        episodes: List of episode numbers (x-axis values)
+        win_rates: List of win rates at each evaluation point (0.0-1.0)
+        avg_rewards: List of average rewards at each evaluation point
+        epsilons: List of epsilon values at each evaluation point (0.0-1.0)
+        save_path: Optional path to save plot image (PNG, 150 DPI)
+
+    Example:
+        >>> plot_training_curves(
+        ...     episodes=[100, 200, 300, 400, 500],
+        ...     win_rates=[0.1, 0.25, 0.4, 0.55, 0.65],
+        ...     avg_rewards=[30, 60, 90, 120, 150],
+        ...     epsilons=[1.0, 0.75, 0.5, 0.25, 0.1],
+        ...     save_path='results/training_progress.png'
+        ... )
     """
     fig, axes = plt.subplots(1, 3, figsize=(15, 4))
 
@@ -159,8 +219,29 @@ def print_q_table_stats(q_table: Dict):
     """
     Print statistics about the Q-table.
 
+    Displays diagnostic information including:
+        - Total number of states visited
+        - Total state-action pairs stored
+        - Average actions per state
+        - Q-value distribution (min, max, mean, std)
+
     Args:
-        q_table: Q-table dictionary
+        q_table: Q-table dictionary {state_hash: {action_idx: q_value}}
+
+    Example output:
+        ==================================================
+        Q-TABLE STATISTICS
+        ==================================================
+          Total states: 1523
+          Total state-action pairs: 4892
+          Avg actions per state: 3.2
+
+        Q-Value Statistics:
+          Min: -15.32
+          Max: 45.67
+          Mean: 12.45
+          Std: 8.91
+        ==================================================
     """
     if not q_table:
         print("Q-table is empty")
