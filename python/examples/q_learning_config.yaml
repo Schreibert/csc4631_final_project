@@ -1,0 +1,63 @@
+# Q-Learning Hyperparameters Configuration
+
+# Learning parameters
+learning:
+  alpha: 0.1              # Learning rate (how much to update Q-values)
+  gamma: 0.95             # Discount factor (importance of future rewards)
+  epsilon_start: 1.0      # Initial exploration rate
+  epsilon_end: 0.01       # Final exploration rate
+  epsilon_decay: 0.995    # Epsilon decay per episode (multiplicative)
+
+# Training parameters
+training:
+  num_episodes: 10000     # Total training episodes
+  eval_frequency: 100     # Evaluate every N episodes
+  eval_episodes: 20       # Number of episodes for evaluation (reduced for speed)
+  checkpoint_frequency: 500  # Save model every N episodes
+
+# State discretization (for tabular Q-learning)
+state_discretization:
+  # Chips buckets relative to target score
+  chips_bins:
+    - 0.0    # 0%
+    - 0.25   # 25%
+    - 0.50   # 50%
+    - 0.75   # 75%
+    - 1.0    # 100%
+    - 1.5    # 150%+
+
+  # Deck remaining buckets
+  deck_bins:
+    - 0      # 0-10 cards
+    - 11     # 11-25 cards
+    - 26     # 26-40 cards
+    - 41     # 41-52 cards
+
+  # Continuous features are bucketed
+  # Discrete features (plays_left, discards_left, num_face_cards, num_aces) kept exact
+  # Boolean features (has_pair, has_trips, etc.) kept exact
+
+# Q-table initialization
+q_table:
+  default_value: 0.0      # Default Q-value for unseen state-action pairs
+  optimistic_init: false  # If true, use higher initial values to encourage exploration
+
+# Environment settings
+environment:
+  target_score: 300
+  reward_config: null     # Path to custom reward config, or null for default
+
+# Logging
+logging:
+  verbose: true           # Print progress during training
+  log_frequency: 10       # Print stats every N episodes (if not verbose, use eval_frequency)
+
+# Model saving
+model:
+  save_dir: "models"      # Directory to save Q-tables
+  model_prefix: "q_table" # Prefix for saved model files
+
+# Baseline comparison
+baseline:
+  compare_to_random: true # Compare performance to random agent
+  random_episodes: 100    # Episodes for random baseline evaluation

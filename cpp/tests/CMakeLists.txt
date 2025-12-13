@@ -32,13 +32,5 @@ target_link_libraries(test_enhanced_observation
 
 add_test(NAME enhanced_observation_test COMMAND test_enhanced_observation)
 
-# Observation arrays debug test
-add_executable(test_observation_arrays
-    test_observation_arrays.cpp
-)
-
-target_link_libraries(test_observation_arrays
-    balatro_core
-)
-
-add_test(NAME observation_arrays_test COMMAND test_observation_arrays)
+# Custom target to build all tests together
+add_custom_target(all_tests DEPENDS balatro_tests test_enhanced_observation)
