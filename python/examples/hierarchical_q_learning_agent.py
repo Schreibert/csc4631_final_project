@@ -26,31 +26,10 @@ State Features (8 dimensions, ~39K total states):
     7. straight_draw (0-2): Straight draw type (0=none, 1=gutshot, 2=open)
     8. upgrade_potential (0-2): How much hand could improve
 
-Typical Performance (10K episodes):
-    - Win rate: 45-55% (vs 8-12% random)
-    - Q_policy size: ~800-1200 states visited
-    - Q_strategy size: ~600-900 states visited
-    - Converges around 3-5K episodes
-
 Hyperparameters (from q_learning_config.yaml):
     - alpha: 0.1 (learning rate)
     - gamma: 0.95 (discount factor)
     - epsilon_start: 1.0 -> epsilon_min: 0.05 (exploration)
-
-Usage:
-    Training:
-        python hierarchical_q_learning_agent.py --mode train --episodes 10000
-
-    Evaluation:
-        python hierarchical_q_learning_agent.py --mode eval \\
-            --load-model models/q_table_ep010000.pkl --visualize
-
-    With config:
-        python hierarchical_q_learning_agent.py --mode train \\
-            --config q_learning_config.yaml --episodes 5000
-
-This separates the "should I play now?" decision from "how should I discard?"
-for better credit assignment and faster learning.
 """
 
 import sys

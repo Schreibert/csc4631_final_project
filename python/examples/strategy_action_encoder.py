@@ -25,28 +25,6 @@ Algorithm Details:
     - DISCARD_STRAIGHT_CHASE: Finds longest consecutive rank sequence, including
       A-2-3-4-5 "wheel" detection where Ace acts as low card
     - DISCARD_UPGRADE: Uses C++ enumerate_all_actions() to find best hand indices
-
-Usage:
-    Command line (prints action summary):
-        python strategy_action_encoder.py
-
-    Programmatic:
-        >>> from balatro_env import BalatroBatchedSimEnv
-        >>> env = BalatroBatchedSimEnv(target_score=300)
-        >>> encoder = StrategyActionEncoder(env)
-        >>>
-        >>> # Get valid actions for current state
-        >>> obs, _ = env.reset(seed=42)
-        >>> valid = encoder.get_valid_actions(obs)
-        >>> print(f"Valid actions: {valid}")  # e.g., [0, 1, 4]
-        >>>
-        >>> # Convert strategy to environment action
-        >>> action = encoder.decode_to_env_action(0, obs)  # PLAY_BEST_HAND
-        >>> print(f"Action type: {'PLAY' if action['type'] == 0 else 'DISCARD'}")
-        >>> print(f"Card mask: {action['card_mask']}")
-
-Contributors:
-    Tyler Schreiber, Alec Nartatez
 """
 
 import numpy as np

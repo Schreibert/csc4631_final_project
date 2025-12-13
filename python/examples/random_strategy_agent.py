@@ -11,24 +11,6 @@ Strategies (5 actions):
     2: DISCARD_FLUSH_CHASE - Chase flush by discarding non-flush cards
     3: DISCARD_STRAIGHT_CHASE - Chase straight by discarding non-consecutive
     4: DISCARD_AGGRESSIVE - Discard 5 lowest cards for complete reset
-
-Typical Performance:
-    - Win rate: ~8-12% at target=300
-    - Avg reward: ~50-100 (with default reward shaping)
-    - Episodes to converge: N/A (no learning)
-
-Usage:
-    Command line:
-        python random_strategy_agent.py --episodes 100 --seed 42 --visualize
-
-    Programmatic:
-        >>> env = BalatroBatchedSimEnv(target_score=300)
-        >>> agent = RandomStrategyAgent(env)
-        >>> obs, _ = env.reset(seed=42)
-        >>> action = agent.choose_action(obs, np.random.RandomState(42))
-        >>> print(agent.get_last_strategy_name())
-
-This agent serves as a baseline for comparing RL agent performance.
 """
 
 import sys

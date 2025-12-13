@@ -11,32 +11,6 @@ Features:
     - Progress rewards (chip gain, threshold bonuses)
     - Hand quality bonuses (small rewards for strong hands)
     - Discard shaping (rewards for strategic discarding)
-
-Usage:
-    >>> # Default config (loads rewards_config.yaml)
-    >>> shaper = RewardShaper()
-    >>>
-    >>> # Custom config file
-    >>> shaper = RewardShaper(config_path='my_rewards.yaml')
-    >>>
-    >>> # Programmatic config
-    >>> config = {'outcome': {'win_bonus': 100}, ...}
-    >>> shaper = RewardShaper(config=config)
-    >>>
-    >>> # Use in episode loop
-    >>> shaper.reset_episode_state()
-    >>> reward = shaper.shape_reward(
-    ...     raw_chip_delta=50,
-    ...     current_chips=150,
-    ...     target_score=300,
-    ...     action=0,  # PLAY_BEST_HAND
-    ...     plays_left=3,
-    ...     discards_left=2,
-    ...     done=False,
-    ...     win=False
-    ... )
-
-See rewards_config.yaml for the full configuration structure.
 """
 
 import yaml

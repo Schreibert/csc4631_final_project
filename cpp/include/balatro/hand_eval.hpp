@@ -102,9 +102,7 @@ HandEvaluation evaluate_hand(const std::vector<Card>& cards);
  */
 HandEvaluation find_best_hand(const std::vector<Card>& cards);
 
-// ============================================================================
 // Observation Feature Helpers
-// ============================================================================
 // These functions compute features for the RL observation vector.
 // They analyze the full 8-card hand without selecting specific subsets.
 

@@ -40,42 +40,30 @@ namespace balatro {
  * All fields are integers or booleans for easy tensor conversion.
  */
 struct Observation {
-    // =========================================================================
     // Resource State (4 features)
-    // =========================================================================
     int plays_left;         ///< Remaining plays (0-4, starts at 4)
     int discards_left;      ///< Remaining discards (0-3, starts at 3)
     int chips;              ///< Current chips accumulated this episode
     int chips_to_target;    ///< Chips needed to win: max(target - chips, 0)
 
-    // =========================================================================
     // Deck State (1 feature)
-    // =========================================================================
     int deck_remaining;     ///< Cards left in draw pile (0-44 after initial deal)
 
-    // =========================================================================
     // Hand Composition (2 features)
-    // =========================================================================
     int num_face_cards;     ///< Count of J/Q/K in hand (0-8)
     int num_aces;           ///< Count of Aces in hand (0-8)
 
-    // =========================================================================
     // Hand Pattern Potential (4 boolean features)
-    // =========================================================================
     bool has_pair;          ///< True if any two cards share rank
     bool has_trips;         ///< True if any three cards share rank
     bool straight_potential;///< True if one card away from straight
     bool flush_potential;   ///< True if 4+ cards share suit
 
-    // =========================================================================
     // Best Hand Analysis (2 features) - Pre-computed by C++
-    // =========================================================================
     int best_hand_type;     ///< HandType enum (0-8) for best 5-card hand
     int best_hand_score;    ///< Predicted chips if best hand is played
 
-    // =========================================================================
     // Complete Hand Patterns (6 boolean features)
-    // =========================================================================
     bool has_two_pair;      ///< Best hand is Two Pair or better
     bool has_full_house;    ///< Best hand is Full House
     bool has_four_of_kind;  ///< Best hand is Four of a Kind
@@ -83,9 +71,7 @@ struct Observation {
     bool has_flush;         ///< Best hand is Flush (or Straight Flush)
     bool has_straight_flush;///< Best hand is Straight Flush
 
-    // =========================================================================
     // Current Hand Cards (16 features: 8 ranks + 8 suits)
-    // =========================================================================
     int card_ranks[HAND_SIZE];  ///< Rank of each card (0-12, where 0=2, 12=A)
     int card_suits[HAND_SIZE];  ///< Suit of each card (0-3: C/D/H/S)
 };
@@ -242,9 +228,7 @@ public:
      */
     bool is_valid_action(const Action& action) const;
 
-    // =========================================================================
     // RL Helper Methods
-    // =========================================================================
     // These methods help agents make decisions without trial-and-error.
 
     /**

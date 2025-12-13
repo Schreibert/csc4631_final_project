@@ -17,24 +17,6 @@ Decision Priority (evaluated in order):
     7. Straight potential + discards? -> Chase straight
     8. Weak hand + discards?     -> Discard to upgrade
     9. Fallback                  -> Play best hand
-
-Typical Performance:
-    - Win rate: ~65-75% at target=300 (deterministic)
-    - Significantly outperforms random baseline
-    - Provides strong baseline for RL comparison
-
-Usage:
-    Command line:
-        python basic_heuristic.py --episodes 100 --visualize --viz-mode compact
-
-    Programmatic:
-        >>> env = BalatroBatchedSimEnv(target_score=300)
-        >>> agent = BasicHeuristicAgent(env)
-        >>> obs, _ = env.reset(seed=42)
-        >>> action = agent.choose_action(obs)
-        >>> print(agent.get_last_reason())  # e.g., "chase_flush"
-
-This provides a deterministic baseline for comparing Q-learning performance.
 """
 
 import sys

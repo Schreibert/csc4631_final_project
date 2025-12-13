@@ -85,4 +85,4 @@ advanced:
 
 # Metadata
 version: "v0"                   # Reward config version (matches game ruleset version)
-description: "Conservative efficiency-focused reward scheme. Heavily rewards play conservation, neutral on risk-taking, no discard penalties."
+description: "Efficiency-focused reward scheme."

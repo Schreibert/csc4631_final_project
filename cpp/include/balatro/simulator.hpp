@@ -117,9 +117,7 @@ public:
      */
     const BlindState& state_view() const { return state_; }
 
-    // =========================================================================
     // RL Helper Methods (delegated to BlindState)
-    // =========================================================================
 
     /**
      * @brief Get best possible 5-card hand from current state.

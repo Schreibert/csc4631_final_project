@@ -14,25 +14,6 @@ Features:
     - Scoring formula breakdown showing base chips, rank sum, and multiplier
     - Hand type analysis by reverse-engineering from chip scores
 
-Usage:
-    >>> from balatro_env import BalatroBatchedSimEnv
-    >>> from agent_visualizer import AgentVisualizer
-    >>>
-    >>> env = BalatroBatchedSimEnv(target_score=300)
-    >>> viz = AgentVisualizer()  # Auto-detects Unicode support
-    >>>
-    >>> obs, _ = env.reset(seed=42)
-    >>> viz.reset_episode()
-    >>> viz.print_episode_header(1, 300, seed=42)
-    >>>
-    >>> # Full visualization (detailed breakdown)
-    >>> action = agent.choose_action(obs)
-    >>> next_obs, reward, done, trunc, info = env.step(action)
-    >>> viz.visualize_step(obs, action, next_obs, reward, info)
-    >>>
-    >>> # Compact visualization (one line per step)
-    >>> viz.visualize_step_compact(obs, action, next_obs, reward, info)
-
 Output Modes:
     Full mode example:
         ======================================================================

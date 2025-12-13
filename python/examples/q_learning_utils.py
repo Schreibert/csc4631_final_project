@@ -16,38 +16,6 @@ File Format:
             'q_table': Dict[state_hash, Dict[action_idx, q_value]],
             'metadata': Dict with 'episode', 'epsilon', 'win_rate', etc.
         }
-
-Usage:
-    Saving checkpoints during training:
-        >>> from q_learning_utils import save_checkpoint, load_checkpoint
-        >>> metadata = {'episode': 1000, 'epsilon': 0.1, 'win_rate': 0.65}
-        >>> save_checkpoint(q_table, metadata, 'models/q_agent_ep001000.pkl')
-
-    Loading and resuming training:
-        >>> q_table, metadata = load_checkpoint('models/q_agent_ep001000.pkl')
-        >>> start_episode = metadata['episode']
-
-    Plotting training progress:
-        >>> from q_learning_utils import plot_training_curves
-        >>> plot_training_curves(
-        ...     episodes=[100, 200, 300],
-        ...     win_rates=[0.2, 0.4, 0.6],
-        ...     avg_rewards=[50, 100, 150],
-        ...     epsilons=[1.0, 0.5, 0.1],
-        ...     save_path='training_curves.png'
-        ... )
-
-    Comparing to baseline:
-        >>> from q_learning_utils import compare_to_baseline
-        >>> compare_to_baseline(
-        ...     agent_win_rate=0.65,
-        ...     agent_avg_reward=150.0,
-        ...     baseline_win_rate=0.10,
-        ...     baseline_avg_reward=50.0
-        ... )
-
-Contributors:
-    Tyler Schreiber, Alec Nartatez
 """
 
 import pickle

@@ -11,19 +11,6 @@ Features:
     - Batch action execution for efficiency
     - RL helper methods (best hand, score prediction, action enumeration)
 
-Usage:
-    >>> from balatro_env import BalatroBatchedSimEnv
-    >>> env = BalatroBatchedSimEnv(target_score=300)
-    >>> obs, info = env.reset(seed=42)
-    >>>
-    >>> # Create action: play first 5 cards
-    >>> action = {'type': 0, 'card_mask': [1,1,1,1,1,0,0,0]}
-    >>> obs, reward, done, trunc, info = env.step(action)
-    >>>
-    >>> # Use RL helpers
-    >>> best_hand = env.get_best_hand()
-    >>> valid_actions = env.get_valid_actions_with_scores()
-
 See Also:
     - rewards_config.yaml: Default reward configuration
     - reward_shaper.py: RewardShaper class for custom rewards
