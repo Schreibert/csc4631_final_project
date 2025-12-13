@@ -33,6 +33,8 @@ The compiled Python module (`_balatro_core.pyd` on Windows) is automatically cop
 
 ```bash
 cd python
+python -m venv .venv
+.venv/Scripts/activate
 pip install -r requirements.txt
 ```
 
@@ -44,6 +46,7 @@ pip install -r requirements.txt
 
 ```bash
 # From project root (Windows)
+cmake --build build --config Release --target all_tests
 ctest --test-dir build/cpp/tests -C Release --verbose
 ```
 
@@ -160,7 +163,6 @@ python hierarchical_q_learning_agent.py --mode eval --load-model ../models/hql_f
 ├── CMakeLists.txt              - Root CMake configuration
 ├── CLAUDE.md                   - Development guidelines for Claude Code
 ├── README.md                   - Project documentation
-├── SUMMARY.md                  - This file
 │
 ├── cpp/                        - C++ simulation core (C++17)
 │   ├── CMakeLists.txt          - Build configuration for core library
@@ -176,7 +178,7 @@ python hierarchical_q_learning_agent.py --mode eval --load-model ../models/hql_f
 │   │   ├── scoring.cpp         - Score calculation with base values
 │   │   ├── blind_state.cpp     - Game loop, action validation, RL helpers
 │   │   └── simulator.cpp       - Batch action execution
-│   └── tests/                  - Google Test unit tests (45 tests, all passing)
+│   └── tests/                  - Google Test unit tests (44 tests, all passing)
 │
 ├── bindings/                   - pybind11 Python bindings
 │   ├── CMakeLists.txt          - pybind11 module configuration
@@ -190,8 +192,8 @@ python hierarchical_q_learning_agent.py --mode eval --load-model ../models/hql_f
 │   │   └── rewards_config.yaml - Default reward configuration
 │   │
 │   ├── examples/               - Agent implementations
-│   │   ├── random_strategy_agent.py        - Random baseline (~10% win rate)
-│   │   ├── basic_heuristic.py              - Rule-based agent (~70% win rate)
+│   │   ├── random_strategy_agent.py        - Random baseline
+│   │   ├── basic_heuristic.py              - Rule-based agent
 │   │   ├── hierarchical_q_learning_agent.py - Two-level Q-learning
 │   │   ├── strategy_action_encoder.py      - 5 strategies to card masks
 │   │   ├── q_learning_utils.py             - Checkpointing and plotting
