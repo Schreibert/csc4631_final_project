@@ -53,7 +53,6 @@ class BalatroBatchedSimEnv(gym.Env):
         - 'chips': Box(1) [current chips scored]
         - 'chips_to_target': Box(1) [chips needed to win]
         - 'deck_remaining': Box(1) [cards left in deck, 0-52]
-        - 'discard_pile_size': Box(1) [cards in discard pile, 0-52]
         - 'num_face_cards': Box(1) [face cards (J,Q,K) in hand, 0-8]
         - 'num_aces': Box(1) [aces in hand, 0-8]
         - 'card_ranks': MultiDiscrete([13] * 8) [rank of each card in hand, 0-12]
@@ -172,7 +171,6 @@ class BalatroBatchedSimEnv(gym.Env):
             'chips': spaces.Box(low=0, high=np.inf, shape=(1,), dtype=np.int32),
             'chips_to_target': spaces.Box(low=0, high=np.inf, shape=(1,), dtype=np.int32),
             'deck_remaining': spaces.Box(low=0, high=52, shape=(1,), dtype=np.int32),
-            'discard_pile_size': spaces.Box(low=0, high=52, shape=(1,), dtype=np.int32),
             'num_face_cards': spaces.Box(low=0, high=core.HAND_SIZE, shape=(1,), dtype=np.int32),
             'num_aces': spaces.Box(low=0, high=core.HAND_SIZE, shape=(1,), dtype=np.int32),
             'card_ranks': spaces.MultiDiscrete([core.NUM_RANKS] * core.HAND_SIZE),
@@ -212,7 +210,6 @@ class BalatroBatchedSimEnv(gym.Env):
             'chips': np.array([obs.chips], dtype=np.int32),
             'chips_to_target': np.array([obs.chips_to_target], dtype=np.int32),
             'deck_remaining': np.array([obs.deck_remaining], dtype=np.int32),
-            'discard_pile_size': np.array([obs.discard_pile_size], dtype=np.int32),
             'num_face_cards': np.array([obs.num_face_cards], dtype=np.int32),
             'num_aces': np.array([obs.num_aces], dtype=np.int32),
             'card_ranks': obs.card_ranks,  # Already a numpy array from C++

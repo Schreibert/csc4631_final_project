@@ -58,7 +58,6 @@ PYBIND11_MODULE(_balatro_core, m) {
         .def_readwrite("chips", &balatro::Observation::chips)
         .def_readwrite("chips_to_target", &balatro::Observation::chips_to_target)
         .def_readwrite("deck_remaining", &balatro::Observation::deck_remaining)
-        .def_readwrite("discard_pile_size", &balatro::Observation::discard_pile_size)
         .def_readwrite("num_face_cards", &balatro::Observation::num_face_cards)
         .def_readwrite("num_aces", &balatro::Observation::num_aces)
         // Hand analysis features

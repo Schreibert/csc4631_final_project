@@ -15,8 +15,8 @@
  *
  * Action Enumeration Algorithm:
  *   - PLAY actions: C(8,1) + C(8,2) + C(8,3) + C(8,4) + C(8,5) = 218 combinations
- *   - DISCARD actions: C(8,1) + ... + C(8,8) = 255 combinations
- *   - Total: ~473 actions per state (varies if plays/discards exhausted)
+ *   - DISCARD actions: C(8,1) + ... + C(8,5) = 218 combinations (max 5 cards)
+ *   - Total: ~436 actions per state (varies if plays/discards exhausted)
  *   - Sorted by predicted_chips (descending) for PLAY actions
  */
 
@@ -54,10 +54,9 @@ Observation BlindState::get_observation() const {
     obs.chips = chips_;
     obs.chips_to_target = std::max(0, target_score_ - chips_);
     obs.deck_remaining = deck_.remaining();
-    obs.discard_pile_size = 0; // TODO: Add discard pile tracking to Deck class
     obs.num_face_cards = std::count_if(hand_.begin(), hand_.end(), [](const Card& c) {
         int rank = get_rank(c);
-        return rank >= 9; // 9, 10, J, Q, K, A
+        return rank >= 9; // J, Q, K, A (ranks 9-12)
     });
     obs.num_aces = std::count_if(hand_.begin(), hand_.end(), [](const Card& c) {
         return get_rank(c) == 12; // Ace
@@ -282,9 +281,9 @@ std::vector<ActionOutcome> BlindState::enumerate_all_actions() const {
         }
     }
 
-    // Generate all DISCARD actions (1-8 cards)
+    // Generate all DISCARD actions (1-5 cards, same limit as PLAY)
     if (discards_left_ > 0) {
-        for (int num_cards = 1; num_cards <= HAND_SIZE; ++num_cards) {
+        for (int num_cards = 1; num_cards <= std::min(5, HAND_SIZE); ++num_cards) {
             auto masks = generate_combinations(HAND_SIZE, num_cards);
             for (const auto& mask : masks) {
                 ActionOutcome outcome;

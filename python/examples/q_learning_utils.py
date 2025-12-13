@@ -300,8 +300,6 @@ def evaluate_random_baseline(env, num_episodes: int, seed: int = 42) -> Tuple[fl
     Returns:
         (win_rate, avg_reward) tuple
     """
-    import numpy as np
-
     np_random = np.random.RandomState(seed)
     wins = 0
     total_reward = 0.0

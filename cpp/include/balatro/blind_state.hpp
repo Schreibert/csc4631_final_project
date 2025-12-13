@@ -49,10 +49,9 @@ struct Observation {
     int chips_to_target;    ///< Chips needed to win: max(target - chips, 0)
 
     // =========================================================================
-    // Deck State (2 features)
+    // Deck State (1 feature)
     // =========================================================================
     int deck_remaining;     ///< Cards left in draw pile (0-44 after initial deal)
-    int discard_pile_size;  ///< Cards in discard pile (increases with discards)
 
     // =========================================================================
     // Hand Composition (2 features)

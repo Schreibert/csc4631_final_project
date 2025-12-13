@@ -77,10 +77,11 @@ advanced:
     per_chip_over_target: 0.1   # Bonus per chip over target (e.g., 50 chips over = +5 reward)
     max_bonus: 100              # Cap the maximum safety margin bonus
 
-  # Exploration bonuses (encourage trying diverse actions)
-  exploration:
-    enabled: true
-    action_diversity_bonus: 5   # Bonus for using different action types in episode
+  # NOTE: Exploration bonuses are defined but not currently implemented in RewardShaper.
+  # Uncomment and implement in reward_shaper.py if needed in future.
+  # exploration:
+  #   enabled: true
+  #   action_diversity_bonus: 5   # Bonus for using different action types in episode
 
 # Metadata
 version: "v0"                   # Reward config version (matches game ruleset version)
